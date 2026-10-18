@@ -228,15 +228,23 @@ jobs:
   android:
     if: ${{ inputs.android_arm64 || inputs.android_x86_64 }}
     runs-on: ubuntu-latest
+    env:
+      # Must match godot-cpp 10.0.0's ndk_version default (tools/android.py).
+      # godot-cpp resolves the NDK as $ANDROID_HOME/ndk/<ndk_version> and
+      # ignores ANDROID_NDK_ROOT whenever ANDROID_HOME is set -- which is
+      # always true on GitHub runners. Installing into the SDK dir satisfies
+      # it; ANDROID_NDK_ROOT is exported below for build_thorvg_android.sh.
+      NDK_VERSION: 28.1.13356709
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r26d
+      - name: Install Android NDK ${{ env.NDK_VERSION }}
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" >/dev/null
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       - name: Install build deps
         run: |
@@ -246,8 +254,6 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Build ThorVG for selected ABIs
-        env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           ABIS=""
           if [ "${{ inputs.android_arm64 }}" = "true" ]; then ABIS="$ABIS arm64"; fi
@@ -256,8 +262,6 @@ jobs:
           ABIS="$ABIS" ./build_thorvg_android.sh
 
       - name: Build extension for selected ABIs x targets
-        env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           TARGETS=""
           if [ "${{ inputs.targets }}" != "release_only" ]; then TARGETS="$TARGETS template_debug"; fi
