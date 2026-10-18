@@ -342,7 +342,7 @@ A minimal verification scene was added at
 
 To test:
 
-1. Open `demo/project.godot` in Godot 4.3+ (restart the editor if it was
+1. Open `demo/project.godot` in Godot 4.7+ (restart the editor if it was
    already open during the build so it reloads the DLL).
 2. Open `res://addons/godot_lottie/demo/demo3d.tscn`.
 3. Press **F5** (or **F6** to play just this scene).

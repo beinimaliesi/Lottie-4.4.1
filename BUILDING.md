@@ -301,7 +301,7 @@ Android is always cross-compiled. You need:
 
 ### 4.1 Install Android NDK
 
-Get **Android NDK r25c or newer** (godot-cpp 4.3+ requires it):
+Get **Android NDK r28 (28.1.13356709) or newer** (godot-cpp 10.0.0 defaults to it):
 
 - Via Android Studio: SDK Manager → SDK Tools → NDK (Side by side)
 - Or standalone: https://developer.android.com/ndk/downloads
@@ -337,7 +337,7 @@ strip = '<NDK_ROOT>/toolchains/llvm/prebuilt/<HOST_TAG>/bin/llvm-strip<.exe>'
 
 - `<HOST_TAG>` = `windows-x86_64` / `linux-x86_64` / `darwin-x86_64`
 - Drop the `.cmd` / `.exe` suffixes on Linux and macOS hosts.
-- `24` is the API level (Godot 4.3+ Android minimum).
+- `24` is the API level (Android minimum; godot-cpp 10.0.0 enforces it).
 
 ### 4.3 Build ThorVG for both ABIs
 
@@ -360,7 +360,7 @@ Environment knobs:
 | Var | Default | Meaning |
 |---|---|---|
 | `ANDROID_NDK_ROOT` | *(required)* | Path to the NDK install, e.g. `C:\Android\sdk\ndk\26.3.11579264` |
-| `API` | `24` | Android API level (Godot 4.3+ minimum) |
+| `API` | `24` | Android API level (Android minimum; godot-cpp 10.0.0 enforces it) |
 | `ABIS` | `"arm64 x86_64"` | Space-separated ABI list to build |
 
 If you only need one ABI, pass it in:
@@ -610,7 +610,7 @@ find the right SDK at SCons-time.
 ### 5.5 Testing on a device
 
 1. Open the demo project (or your own project that uses the addon) in
-   Godot 4.5+.
+   Godot 4.7+.
 2. *Project → Export → Add → iOS* — fill in the team identifier and
    bundle id.
 3. Export to a folder. Godot generates an Xcode project that
@@ -649,7 +649,7 @@ emcc --version
 # emcc (Emscripten gcc/clang-like replacement) 3.x.x
 ```
 
-Godot 4.3+ Web exports use **wasm32 + no threads** (the SharedArrayBuffer
+Godot 4.7+ Web exports use **wasm32 + no threads** (the SharedArrayBuffer
 COOP/COEP requirement is a pain), which matches the `.gdextension` entry
 (`web.template_release.wasm32.nothreads.wasm`).
 
@@ -730,7 +730,7 @@ python3 -m http.server 8000
 
 After any platform build:
 
-1. Open `demo/project.godot` in Godot 4.3+. Restart the editor if it was
+1. Open `demo/project.godot` in Godot 4.7+. Restart the editor if it was
    running during the build so it reloads the rebuilt DLL/.so/.wasm.
 2. Open `res://addons/godot_lottie/demo/controldemo.tscn` (2D smoke test)
    and `res://addons/godot_lottie/demo/demo3d.tscn` (3D smoke test).

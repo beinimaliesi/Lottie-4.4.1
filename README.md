@@ -1,6 +1,6 @@
 # unofficial Lottie-godot plugin
 
-High-performance Lottie animation rendering for Godot Engine 4.3+ using optimized ThorVG backend.
+High-performance Lottie animation rendering for Godot Engine 4.7+ using optimized ThorVG backend.
 
 ![ThorVG Godot Demo](thor-lottie.gif)
 
@@ -23,7 +23,7 @@ Note: this is an integration demo for personal use, so features may fail/be inco
 
 **Want to test without building?** The `demo/` folder contains a ready-to-run Godot project with **pre-built binaries for Windows x64**:
 
-1. Open `demo/project.godot` in Godot Engine 4.3+
+1. Open `demo/project.godot` in Godot Engine 4.7+
 2. **Enable the plugin**: Go to Project → Project Settings → Plugins and enable "Godot Lottie"
 3. Run immediately - no compilation required!
 4. Test multiple Lottie animations and performance demos
