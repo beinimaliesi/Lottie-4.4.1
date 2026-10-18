@@ -61,7 +61,7 @@ echo "Using SCons: $SCONS"
 
 require_thorvg() {
     local NAME="$1"
-    local LIB="$SCRIPT_DIR/thirdparty/thorvg/builddir_$NAME/src/libthorvg.a"
+    local LIB="$SCRIPT_DIR/thirdparty/thorvg/builddir_$NAME/src/libthorvg-1.a"
     if [ ! -f "$LIB" ]; then
         echo "ERROR: ThorVG iOS build missing: $LIB"
         echo "       Run: ./build_thorvg_ios.sh"
@@ -151,7 +151,7 @@ build_variant() {
     # We use ar extract+repack rather than libtool -static to avoid a macOS
     # libtool bug where case-insensitive path resolution treats the same
     # archive as appearing twice, triggering a false "duplicate member" error.
-    local THORVG_LIB="$THORVG_BUILDDIR/src/libthorvg.a"
+    local THORVG_LIB="$THORVG_BUILDDIR/src/libthorvg-1.a"
     if [ ! -f "$THORVG_LIB" ]; then
         echo "ERROR: ThorVG .a not found: $THORVG_LIB"
         echo "       Run: ./build_thorvg_ios.sh"

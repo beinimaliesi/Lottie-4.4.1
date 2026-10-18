@@ -42,6 +42,19 @@ echo
 # Navigate to ThorVG directory
 cd thirdparty/thorvg
 
+# Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
+# The submodule is pinned to a tag, so patches live in the parent repo and are
+# applied here instead of being committed into the submodule.
+# 0001 removes thorvg's global operator new/delete overrides, which would
+# hijack host-process allocations when statically linked (critical on iOS).
+PATCH_DIR="../thorvg-upstream-patches"
+if git apply --check "$PATCH_DIR/0001-let-delete-be-delete.patch" 2>/dev/null; then
+    git apply "$PATCH_DIR/0001-let-delete-be-delete.patch"
+    echo "Applied thorvg patch: 0001-let-delete-be-delete.patch"
+elif ! git diff --quiet -- src/common/tvgCommon.h; then
+    echo "thorvg patches already applied"
+fi
+
 # Clean previous build
 if [ -d "builddir" ]; then
     echo "Cleaning previous build directory..."
@@ -84,7 +97,6 @@ meson setup builddir \
     -Dengines=sw \
     -Dloaders=lottie \
     -Dbindings=capi \
-    -Dexamples=false \
     -Dtests=false \
     --backend=ninja \
     --wipe
@@ -111,7 +123,7 @@ echo "========================================"
 echo "ThorVG build completed successfully!"
 echo
 echo "Output location: thirdparty/thorvg/builddir/src/"
-echo "Library file: libthorvg.a (static library)"
+echo "Library file: libthorvg-1.a (static library)"
 echo
 echo "Enabled optimizations:"
 echo "  ✓ Multi-threading: Task scheduler with $CORES workers"

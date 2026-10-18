@@ -10,8 +10,8 @@ REM   API     -- Android API level (default 24, the Godot 4.3+ minimum)
 REM   ABIS    -- space-separated list (default "arm64 x86_64")
 REM
 REM Outputs:
-REM   thirdparty\thorvg\builddir_android_arm64\src\libthorvg.a
-REM   thirdparty\thorvg\builddir_android_x86_64\src\libthorvg.a
+REM   thirdparty\thorvg\builddir_android_arm64\src\libthorvg-1.a
+REM   thirdparty\thorvg\builddir_android_x86_64\src\libthorvg-1.a
 
 setlocal enableextensions
 
@@ -83,6 +83,23 @@ if not exist "%THORVG_DIR%" (
     exit /b 1
 )
 
+REM Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
+REM The submodule is pinned to a tag, so patches live in the parent repo and
+REM are applied here instead of being committed into the submodule.
+REM 0001 removes thorvg's global operator new/delete overrides, which would
+REM hijack host-process allocations when statically linked.
+set "PATCH_DIR=%SCRIPT_DIR%thirdparty\thorvg-upstream-patches"
+pushd "%THORVG_DIR%"
+git apply --check "%PATCH_DIR%\0001-let-delete-be-delete.patch" 2>nul
+if %ERRORLEVEL% EQU 0 (
+    git apply "%PATCH_DIR%\0001-let-delete-be-delete.patch"
+    echo Applied thorvg patch: 0001-let-delete-be-delete.patch
+) else (
+    git diff --quiet -- src/common/tvgCommon.h
+    if ERRORLEVEL 1 echo thorvg patches already applied
+)
+popd
+
 REM ---- Build per ABI -----------------------------------------------------
 
 for %%A in (%ABIS%) do (
@@ -93,9 +110,9 @@ for %%A in (%ABIS%) do (
 echo.
 echo === ThorVG Android build complete ===
 for %%A in (%ABIS%) do (
-    set "LIB=%THORVG_DIR%\builddir_android_%%A\src\libthorvg.a"
-    if exist "%THORVG_DIR%\builddir_android_%%A\src\libthorvg.a" (
-        echo   %%A: %THORVG_DIR%\builddir_android_%%A\src\libthorvg.a
+    set "LIB=%THORVG_DIR%\builddir_android_%%A\src\libthorvg-1.a"
+    if exist "%THORVG_DIR%\builddir_android_%%A\src\libthorvg-1.a" (
+        echo   %%A: %THORVG_DIR%\builddir_android_%%A\src\libthorvg-1.a
     ) else (
         echo   %%A: MISSING
     )
@@ -168,7 +185,7 @@ pushd "%THORVG_DIR%"
     -Ddefault_library=static ^
     -Dsimd=true -Dthreads=false -Dpartial=true ^
     -Dengines=sw -Dloaders=lottie -Dbindings=capi ^
-    -Dexamples=false -Dtests=false ^
+    -Dtests=false ^
     --backend=ninja
 if errorlevel 1 (
     popd

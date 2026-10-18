@@ -867,8 +867,8 @@ bool LottieAnimation::_load_animation(const String& path) {
     _apply_picture_transform_to_fit();
 
     // Add to canvas once; keep persistent for incremental updates
-    if (canvas->push(picture) != tvg::Result::Success) {
-        UtilityFunctions::printerr("Failed to push picture to canvas");
+    if (canvas->add(picture) != tvg::Result::Success) {
+        UtilityFunctions::printerr("Failed to add picture to canvas");
         return false;
     }
     
@@ -1766,7 +1766,7 @@ void LottieAnimation::_worker_loop() {
                     w_picture->size(&pw, &ph);
                     if (pw <= 0 || ph <= 0) { pw = (float)render_size.x; ph = (float)render_size.y; }
                     w_base_picture_size = Vector2i((int)std::ceil(pw), (int)std::ceil(ph));
-                    if (w_canvas->push(w_picture) == tvg::Result::Success) {
+                    if (w_canvas->add(w_picture) == tvg::Result::Success) {
                         // ok
                     } else {
                         w_animation = nullptr;

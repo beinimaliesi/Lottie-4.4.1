@@ -11,8 +11,8 @@
 #   ABIS    -- space-separated list to build (default "arm64 x86_64")
 #
 # Outputs:
-#   thirdparty/thorvg/builddir_android_arm64/src/libthorvg.a
-#   thirdparty/thorvg/builddir_android_x86_64/src/libthorvg.a
+#   thirdparty/thorvg/builddir_android_arm64/src/libthorvg-1.a
+#   thirdparty/thorvg/builddir_android_x86_64/src/libthorvg-1.a
 
 set -e
 
@@ -94,6 +94,19 @@ if [ ! -d "$THORVG_DIR" ]; then
     exit 1
 fi
 
+# Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
+# The submodule is pinned to a tag, so patches live in the parent repo and are
+# applied here instead of being committed into the submodule.
+apply_thorvg_patches() {
+    (cd "$THORVG_DIR" && \
+        git apply --check "$SCRIPT_DIR/thirdparty/thorvg-upstream-patches/0001-let-delete-be-delete.patch" 2>/dev/null && \
+        git apply "$SCRIPT_DIR/thirdparty/thorvg-upstream-patches/0001-let-delete-be-delete.patch" && \
+        echo "Applied thorvg patch: 0001-let-delete-be-delete.patch") || \
+    (cd "$THORVG_DIR" && git diff --quiet -- src/common/tvgCommon.h || \
+        echo "thorvg patches already applied")
+}
+apply_thorvg_patches
+
 build_for_abi() {
     local ABI="$1"
     local TRIPLE="$2"
@@ -137,7 +150,7 @@ EOF
             -Ddefault_library=static \
             -Dsimd=true -Dthreads=true -Dpartial=true \
             -Dengines=sw -Dloaders=lottie -Dbindings=capi \
-            -Dexamples=false -Dtests=false \
+            -Dtests=false \
             --backend=ninja && \
         $MESON compile -C "$BUILDDIR_NAME")
 }
@@ -162,7 +175,7 @@ done
 echo
 echo "=== ThorVG Android build complete ==="
 for abi in $ABIS; do
-    LIB="$THORVG_DIR/builddir_android_$abi/src/libthorvg.a"
+    LIB="$THORVG_DIR/builddir_android_$abi/src/libthorvg-1.a"
     if [ -f "$LIB" ]; then
         echo "  $abi: $LIB ($(du -h "$LIB" | cut -f1))"
     else

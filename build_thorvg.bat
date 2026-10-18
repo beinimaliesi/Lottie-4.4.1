@@ -31,6 +31,21 @@ echo.
 REM Navigate to ThorVG directory
 cd thirdparty\thorvg
 
+REM Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
+REM The submodule is pinned to a tag, so patches live in the parent repo and
+REM are applied here instead of being committed into the submodule.
+REM 0001 removes thorvg's global operator new/delete overrides, which would
+REM hijack host-process allocations when statically linked.
+set "PATCH_DIR=..\thorvg-upstream-patches"
+git apply --check "%PATCH_DIR%\0001-let-delete-be-delete.patch" 2>nul
+if %ERRORLEVEL% EQU 0 (
+    git apply "%PATCH_DIR%\0001-let-delete-be-delete.patch"
+    echo Applied thorvg patch: 0001-let-delete-be-delete.patch
+) else (
+    git diff --quiet -- src/common/tvgCommon.h
+    if ERRORLEVEL 1 echo thorvg patches already applied
+)
+
 REM Clean previous build
 if exist builddir (
     echo Cleaning previous build directory...
@@ -71,7 +86,6 @@ meson setup builddir ^
   -Dengines=sw ^
   -Dloaders=lottie ^
   -Dbindings=capi ^
-  -Dexamples=false ^
   -Dcpp_args="-DTHORVG_THREAD_SUPPORT" ^
   --backend=ninja ^
   --wipe
@@ -98,7 +112,7 @@ echo ========================================
 echo ThorVG build completed successfully
 echo.
 echo Output location: thirdparty\thorvg\builddir\src\
-echo Library file: thorvg.lib (static library, linked into the extension .dll)
+echo Library file: thorvg-1.lib (static library, linked into the extension .dll)
 echo.
 echo Enabled optimizations:
 echo   - Multi-threading: Task scheduler with %CORES% workers

@@ -268,8 +268,8 @@ bool LottieAnimation3D::_load_animation(const String &path) {
 
     _apply_picture_transform_to_fit();
 
-    if (canvas->push(picture) != tvg::Result::Success) {
-        UtilityFunctions::printerr("LottieAnimation3D: Failed to push picture to canvas");
+    if (canvas->add(picture) != tvg::Result::Success) {
+        UtilityFunctions::printerr("LottieAnimation3D: Failed to add picture to canvas");
         animation = nullptr;
         picture = nullptr;
         emit_signal("animation_loaded", false);

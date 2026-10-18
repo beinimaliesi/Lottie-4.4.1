@@ -12,7 +12,7 @@
 #   ./build_thorvg_web.sh
 #
 # Output:
-#   thirdparty/thorvg/build_wasm/src/libthorvg.a
+#   thirdparty/thorvg/build_wasm/src/libthorvg-1.a
 
 set -e
 
@@ -43,6 +43,19 @@ echo "Meson: $($MESON --version)"
 
 THORVG_DIR="$SCRIPT_DIR/thirdparty/thorvg"
 BUILD_DIR="$THORVG_DIR/build_wasm"
+
+# Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
+# The submodule is pinned to a tag, so patches live in the parent repo and are
+# applied here instead of being committed into the submodule.
+apply_thorvg_patches() {
+    (cd "$THORVG_DIR" && \
+        git apply --check "$SCRIPT_DIR/thirdparty/thorvg-upstream-patches/0001-let-delete-be-delete.patch" 2>/dev/null && \
+        git apply "$SCRIPT_DIR/thirdparty/thorvg-upstream-patches/0001-let-delete-be-delete.patch" && \
+        echo "Applied thorvg patch: 0001-let-delete-be-delete.patch") || \
+    (cd "$THORVG_DIR" && git diff --quiet -- src/common/tvgCommon.h || \
+        echo "thorvg patches already applied")
+}
+apply_thorvg_patches
 
 # Write Emscripten cross-file for Meson
 CROSS_FILE="$THORVG_DIR/emscripten.ini"
@@ -83,7 +96,6 @@ $MESON setup "$BUILD_DIR" \
     -Dengines=sw \
     -Dloaders=lottie \
     -Dbindings=capi \
-    -Dexamples=false \
     -Dtests=false \
     --backend=ninja \
     --wipe
@@ -95,5 +107,5 @@ $MESON compile -C "$BUILD_DIR" -j"$(nproc 2>/dev/null || echo 4)"
 echo
 echo "========================================"
 echo "ThorVG WASM build complete!"
-echo "Output: $BUILD_DIR/src/libthorvg.a"
+echo "Output: $BUILD_DIR/src/libthorvg-1.a"
 echo "========================================"
