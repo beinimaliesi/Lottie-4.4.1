@@ -17,7 +17,7 @@ The `.gdextension` file declares output paths for all of these:
 |---|---|---|---|
 | Windows | `x86_64` (✅), `x86_32` (📋) | `thorvg-1.dll` (shared) | `.dll` |
 | Linux | `x86_64`, `arm64` (📋) | `libthorvg.a` (static) | `.so` |
-| macOS | Universal (`x86_64`+`arm64`) (📋) | `libthorvg.a` (static) | `.framework` |
+| macOS | `arm64` (✅), `x86_64` (✅), Universal (📋) | `libthorvg.a` (static) | `.framework` |
 | Android | `arm64` (✅), `x86_64` (✅) | `libthorvg.a` (static, cross-compiled) | `.so` |
 | **iOS** | **device `arm64`, simulator `arm64` + `x86_64` (📋)** | `libthorvg.a` (static, cross-compiled) | `.xcframework` |
 | Web | `wasm32` nothreads (📋) | static (`build_wasm/`) | `.wasm` |
