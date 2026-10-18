@@ -6,9 +6,12 @@
 script = ExtResource("1_6e2k8")
 
 [node name="LottieAnimation" type="LottieAnimation" parent="." unique_id=755252312]
-animation_path = "res://addons/godot_lottie/lotties/test_case_001/lf_planet.json"
+animation_path = "res://addons/godot_lottie/lotties/test_case/level-fail.lottie"
 playing = true
 fit_box_size = Vector2i(350, 350)
+state/animation = "animation_0"
+state/machine = ""
+state/state = ""
 process_mode = 3
 position = Vector2(624, 311)
 
