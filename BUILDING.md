@@ -17,7 +17,7 @@ The `.gdextension` file declares output paths for all of these:
 |---|---|---|---|
 | Windows | `x86_64` (✅), `x86_32` (📋) | `thorvg-1.dll` (shared) | `.dll` |
 | Linux | `x86_64`, `arm64` (📋) | `libthorvg.a` (static) | `.so` |
-| macOS | `arm64` (✅), `x86_64` (✅), Universal (📋) | `libthorvg.a` (static) | `.framework` |
+| macOS | Universal (`arm64`+`x86_64`) (✅) | `libthorvg.a` (static) | `.framework` |
 | Android | `arm64` (✅), `x86_64` (✅) | `libthorvg.a` (static, cross-compiled) | `.so` |
 | **iOS** | **device `arm64`, simulator `arm64` + `x86_64` (📋)** | `libthorvg.a` (static, cross-compiled) | `.xcframework` |
 | Web | `wasm32` nothreads (📋) | static (`build_wasm/`) | `.wasm` |
@@ -231,36 +231,23 @@ brew install meson ninja python scons # via Homebrew
 
 ### 3.2 Build ThorVG (Universal)
 
-The shipped `build_thorvg.sh` detects ARM Mac and disables `-Dthreads` there
-(ARM macOS + ThorVG threading had compat issues). For a Universal `.a` you
-can either run the script twice (once per arch with a meson cross-file) and
-`lipo` them together, or just build for the host arch you're on:
+The shipped `build_thorvg_macos_universal.sh` produces a fat `libthorvg-1.a`
+covering both arches in one step — native build for the host arch,
+cross-compiled (plain `clang -arch`, the macOS SDK is universal) for the
+other, then `lipo`'d into the canonical `builddir/src/`:
 
 ```bash
-./build_thorvg.sh   # produces libthorvg.a for the host arch (x86_64 or arm64)
+./build_thorvg_macos_universal.sh   # arm64 + x86_64 -> builddir/src/libthorvg-1.a
 ```
 
-For a true Universal binary that runs on both Intel and Apple Silicon:
+Per-slice options mirror `build_thorvg.sh`: `threads=false` on the arm64
+slice (ARM macOS + ThorVG threading had compat issues), `threads=true` on
+x86_64; OpenMP off on all of macOS (Apple Clang has no `omp.h`).
+
+Only need the host arch? Plain `build_thorvg.sh` still works:
 
 ```bash
-# arm64 build
-cd thirdparty/thorvg
-meson setup builddir_arm64 \
-  --cross-file <path-to-arm64-cross.ini> \
-  -Dbuildtype=release -Ddefault_library=static -Dsimd=true -Dthreads=false \
-  -Dpartial=true -Dengines=sw -Dloaders=lottie -Dbindings=capi -Dexamples=false
-meson compile -C builddir_arm64
-
-# x86_64 build
-meson setup builddir_x86_64 \
-  --cross-file <path-to-x86_64-cross.ini> \
-  -Dbuildtype=release -Ddefault_library=static -Dsimd=true -Dthreads=true \
-  -Dpartial=true -Dengines=sw -Dloaders=lottie -Dbindings=capi -Dexamples=false
-meson compile -C builddir_x86_64
-
-# Combine
-lipo -create builddir_arm64/src/libthorvg.a builddir_x86_64/src/libthorvg.a \
-     -output builddir/src/libthorvg.a
+./build_thorvg.sh   # produces libthorvg-1.a for the host arch (arm64 or x86_64)
 ```
 
 ### 3.3 Build the extension

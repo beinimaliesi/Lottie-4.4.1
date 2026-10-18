@@ -15,11 +15,7 @@ on:
         type: boolean
         default: false
       macos:
-        description: 'macOS arm64 (.framework, Apple Silicon)'
-        type: boolean
-        default: false
-      macos_intel:
-        description: 'macOS x86_64 (.framework, Intel)'
+        description: 'macOS Universal (.framework, arm64 + x86_64)'
         type: boolean
         default: false
       ios:
@@ -172,65 +168,35 @@ jobs:
       - name: Install build deps
         run: brew install meson ninja scons
 
-      - name: Build ThorVG (static, host arch)
+      - name: Build ThorVG (static, universal arm64 + x86_64)
+        # Native arm64 slice + cross-compiled x86_64 slice, lipo'd into a
+        # fat libthorvg-1.a in the canonical builddir/ (see the script).
         run: |
-          chmod +x build_thorvg.sh
-          ./build_thorvg.sh
+          chmod +x build_thorvg_macos_universal.sh
+          ./build_thorvg_macos_universal.sh
 
-      - name: Build extension (host arch only -- not Universal)
-        # NOTE: this builds for the runner's arch (arm64). For Universal
-        # macOS support, both arm64 and x86_64 ThorVG slices need to be
-        # built and lipo'd; see BUILDING.md §3 for the manual recipe.
+      - name: Build extension (universal)
+        # arch=universal makes godot-cpp's tools/macos.py pass
+        # "-arch arm64 -arch x86_64" for compiling and linking, producing a
+        # single fat .framework covering Apple Silicon and Intel Macs.
         run: |
-          HOST_ARCH=$(uname -m)
-          if [ "$HOST_ARCH" = "arm64" ]; then SCONS_ARCH=arm64; else SCONS_ARCH=x86_64; fi
           if [ "${{ inputs.targets }}" != "release_only" ]; then
-            scons platform=macos target=template_debug arch=$SCONS_ARCH -j$(sysctl -n hw.ncpu)
+            scons platform=macos target=template_debug arch=universal -j$(sysctl -n hw.ncpu)
           fi
           if [ "${{ inputs.targets }}" != "debug_only" ]; then
-            scons platform=macos target=template_release arch=$SCONS_ARCH -j$(sysctl -n hw.ncpu)
+            scons platform=macos target=template_release arch=universal -j$(sysctl -n hw.ncpu)
           fi
+
+      - name: Verify universal slices
+        run: |
+          for fw in demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_*.framework; do
+            lipo -info "$fw/libgodot_lottie.macos."*
+            file "$fw/libgodot_lottie.macos."*
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_*.framework/
-
-  # ----------------------------------------------------------------------
-  macos-intel:
-    if: ${{ inputs.macos_intel }}
-    runs-on: macos-15-intel    # last Intel macOS runner image (retires ~Aug 2027)
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install build deps
-        run: brew install meson ninja scons
-
-      - name: Build ThorVG (static, x86_64)
-        # build_thorvg.sh keeps threads=true on Intel Macs (only ARM Macs
-        # need it off) and drops OpenMP on all of macOS. No env tweaks needed.
-        run: |
-          chmod +x build_thorvg.sh
-          ./build_thorvg.sh
-
-      - name: Build extension (x86_64)
-        # NOTE: SConstruct names the framework platform+target only, so this
-        # artifact's filename is identical to the arm64 job's. Fine while they
-        # stay separate artifacts; to ship both arches in one checkout, lipo
-        # them into a Universal binary instead (BUILDING.md §3.2).
-        run: |
-          if [ "${{ inputs.targets }}" != "release_only" ]; then
-            scons platform=macos target=template_debug arch=x86_64 -j$(sysctl -n hw.ncpu)
-          fi
-          if [ "${{ inputs.targets }}" != "debug_only" ]; then
-            scons platform=macos target=template_release arch=x86_64 -j$(sysctl -n hw.ncpu)
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-x86_64
+          name: macos-universal
           path: demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_*.framework/
 
   # ----------------------------------------------------------------------
@@ -367,7 +333,7 @@ jobs:
   # Optional: auto-commit the freshly built artifacts back to main.
   # Only runs if `commit_artifacts` was ticked. Skips if no artifacts exist.
   commit:
-    needs: [windows, linux-latest, linux-compat, macos, macos-intel, ios, android, web]
+    needs: [windows, linux-latest, linux-compat, macos, ios, android, web]
     if: ${{ always() && inputs.commit_artifacts && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
@@ -393,7 +359,7 @@ jobs:
             echo "No artifact changes to commit."
           else
             BUILT=""
-            for flag in windows_x86_64 linux_x86_64 macos macos_intel ios android_arm64 android_x86_64; do
+            for flag in windows_x86_64 linux_x86_64 macos ios android_arm64 android_x86_64; do
               if [ "$(echo '${{ toJSON(inputs) }}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("'"$flag"'"))')" = "True" ]; then
                 BUILT="$BUILT $flag"
               fi
