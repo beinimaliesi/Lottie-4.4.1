@@ -125,6 +125,12 @@ cpu = '$CPU_FAMILY'
 endian = 'little'
 EOF
 
+    # -Dextra=lottie_exp: drop the default 'openmp' from 'extra'. ThorVG's
+    # meson.build sets THORVG_OPENMP_SUPPORT from the option alone, without
+    # checking that dependency('openmp') was actually found -- and Apple
+    # clang's iOS SDK has no omp.h, which fails tvgSwRenderer.cpp at
+    # '#include <omp.h>'. OpenMP is moot here anyway: with threads=false the
+    # rasterizer uses ThorVG's own task scheduler.
     # -Dthreads=false: matches the Android approach -- ThorVG's threaded task
     # scheduler can have lifecycle issues inside an embedded library on iOS.
     # SIMD stays on, single-threaded raster is still plenty fast for Lottie.
@@ -133,7 +139,7 @@ EOF
             --cross-file "$CROSSFILE" \
             -Dbuildtype=release -Doptimization=3 -Db_ndebug=true \
             -Ddefault_library=static \
-            -Dsimd=true -Dthreads=false -Dpartial=true \
+            -Dsimd=true -Dthreads=false -Dpartial=true -Dextra=lottie_exp \
             -Dengines=sw -Dloaders=lottie,png -Dbindings=capi \
             -Dtests=false \
             --backend=ninja && \
