@@ -149,7 +149,7 @@ EOF
             -Dbuildtype=release -Doptimization=3 -Db_ndebug=true \
             -Ddefault_library=static \
             -Dsimd=true -Dthreads=true -Dpartial=true \
-            -Dengines=sw -Dloaders=lottie -Dbindings=capi \
+            -Dengines=sw -Dloaders=lottie,png -Dbindings=capi \
             -Dtests=false \
             --backend=ninja && \
         $MESON compile -C "$BUILDDIR_NAME")

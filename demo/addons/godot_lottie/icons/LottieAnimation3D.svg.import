@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b8lottieanim3dico"
-path="res://.godot/imported/LottieAnimation3D.svg-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6.ctex"
+uid="uid://jenv5mm41gl3"
+path="res://.godot/imported/LottieAnimation3D.svg-786b6970cdb7fd1080f2ebf3db261720.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://addons/godot_lottie/icons/LottieAnimation3D.svg"
-dest_files=["res://.godot/imported/LottieAnimation3D.svg-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6.ctex"]
+dest_files=["res://.godot/imported/LottieAnimation3D.svg-786b6970cdb7fd1080f2ebf3db261720.ctex"]
 
 [params]
 

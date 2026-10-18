@@ -94,7 +94,7 @@ $MESON setup "$BUILD_DIR" \
     -Dsimd=false \
     -Dpartial=true \
     -Dengines=sw \
-    -Dloaders=lottie \
+    -Dloaders=lottie,png \
     -Dbindings=capi \
     -Dtests=false \
     --backend=ninja \

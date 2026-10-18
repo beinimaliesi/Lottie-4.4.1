@@ -95,7 +95,7 @@ meson setup builddir \
     $THREADS_OPTION \
     -Dpartial=true \
     -Dengines=sw \
-    -Dloaders=lottie \
+    -Dloaders=lottie,png \
     -Dbindings=capi \
     -Dtests=false \
     --backend=ninja \
