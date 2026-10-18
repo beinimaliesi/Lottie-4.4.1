@@ -772,6 +772,8 @@ Godot picks the right `.dll` / `.so` / `.framework` / `.wasm` per the
 | Linker error: `unresolved external symbol _tvg_...` | ThorVG was built with `-Dbindings=capi=false`. Rebuild with `-Dbindings=capi`. |
 | Godot loads the addon but `LottieAnimation3D` isn't in *Create New Node* | DLL is older than your sources. Force a clean SCons build (`python -m SCons -c` to clean, then rebuild) and restart the editor. |
 | Web export shows `RuntimeError: Aborted(...)` on load | ThorVG was built with `-Dthreads=true` for WASM. Web build must use `-Dthreads=false` and the Emscripten flag `-pthread=false`. |
+| `fatal error: 'omp.h' file not found` (macOS/iOS/Web builds) | ThorVG's `extra` option defaults to `['lottie_exp', 'openmp']`, and its meson.build defines `THORVG_OPENMP_SUPPORT` from the option alone — without checking that `dependency('openmp')` actually resolved. Apple Clang and Emscripten ship no `omp.h`, so the build fails at `#include <omp.h>`. The helper scripts (`build_thorvg.sh` on macOS, `build_thorvg_ios.sh`, `build_thorvg_web.sh`) pass `-Dextra=lottie_exp` to drop it. For hand-rolled meson setups, always pass `-Dextra=lottie_exp` unless your toolchain has a working OpenMP runtime. See §12. |
+| `ERROR: Could not find NDK toolchain at .../ndk/28.1.13356709/...` (CI or local) | godot-cpp 10.0.0's `tools/android.py` resolves the NDK as `$ANDROID_HOME/ndk/<ndk_version>` and **ignores `ANDROID_NDK_ROOT`** whenever `ANDROID_HOME` is set (always true on GitHub runners). Its default `ndk_version` is `28.1.13356709`. Fix: install that NDK version into the SDK dir (`sdkmanager "ndk;28.1.13356709"`) or pass `ndk_version=<version>` to SCons. `build_thorvg_android.sh` keeps using `ANDROID_NDK_ROOT`. |
 | Android: `libgodot_lottie.so` missing | Wrong ABI built or wrong `arch=` flag. Each Android ABI needs its own ThorVG + extension build (§4.3). |
 
 ---
@@ -823,7 +825,7 @@ Build time is roughly the slowest one (~10–20 minutes), not the sum.
 | Linux x86_64 | `ubuntu-latest` | Installs `build-essential`/`meson`/`ninja`/`scons` via apt+pip, runs `./build_thorvg.sh`, then SCons |
 | macOS | `macos-latest` (Apple Silicon) | `brew install meson ninja scons`, runs `./build_thorvg.sh`, then SCons for host arch (arm64) |
 | iOS | `macos-latest` | Same brew installs, runs `./build_thorvg_ios.sh` then `./build_extension_ios.sh` to produce `.xcframework` per target |
-| Android | `ubuntu-latest` + `nttld/setup-ndk@v1` (NDK r26d) | Cross-compiles ThorVG + extension for each ticked ABI |
+| Android | `ubuntu-latest` + sdkmanager NDK 28.1.13356709 | Installs the NDK version godot-cpp 10.0.0 expects into `$ANDROID_HOME/ndk/`, exports `ANDROID_NDK_ROOT` for `build_thorvg_android.sh`, then cross-compiles ThorVG + extension for each ticked ABI |
 
 ### Limitations / known gaps
 
@@ -856,3 +858,85 @@ These would make multi-platform builds smoother:
 - Ship the per-platform meson cross-files (`cross-android-*.ini`,
   `cross-emscripten.ini`) in `thirdparty/thorvg-crossfiles/` so users don't
   hand-edit them.
+
+---
+
+## 12. The `-Dextra=...` / OpenMP story (why macOS, iOS and Web need it)
+
+Background on the `fatal error: 'omp.h' file not found` build failures and
+why the build scripts pass `-Dextra=lottie_exp` on some platforms.
+
+### What OpenMP is
+
+OpenMP is a compiler-side shared-memory parallelism standard. The typical
+usage is a pragma above a hot loop:
+
+```cpp
+#pragma omp parallel for
+for (int i = 0; i < pixels; i++) {
+    dst[i] = blend(src[i]);   // compiler splits this across CPU cores
+}
+```
+
+Compiled with `-fopenmp`, the compiler auto-parallelizes that loop; a runtime
+library (libgomp on Linux gcc, vcomp on MSVC) provides `omp.h` and functions
+like `omp_set_num_threads()`. Without `-fopenmp` the pragmas are silently
+ignored and the loop stays single-threaded.
+
+### What ThorVG uses it for
+
+In thorvg 1.0.3, OpenMP usage is tiny — three inner pixel loops:
+
+- `tvgSwRaster.cpp` — raster fill
+- `tvgSwPostEffect.cpp` ×2 — post-processing (blur etc.)
+
+ThorVG's *task-level* parallelism ("which shape gets drawn by which worker")
+is handled by its own `TaskScheduler` built on `std::thread`, controlled by
+the separate `-Dthreads` option — not by OpenMP. So dropping OpenMP costs
+only those three inner loops falling back to single-threaded execution,
+while everything else (task scheduling, SIMD) is unaffected.
+
+### The upstream defect
+
+Since the thorvg v1.0.3 upgrade, the `extra` meson option defaults to
+`['lottie_exp', 'openmp']` (`thirdparty/thorvg/meson_options.txt`), so every
+platform build implicitly enables OpenMP support. ThorVG's `meson.build`
+then defines `THORVG_OPENMP_SUPPORT` from the option **alone** — it never
+checks that `dependency('openmp', required: false)` (in
+`src/renderer/sw_engine/meson.build`) actually resolved. When the dependency
+is missing it is silently dropped, but the macro is still defined, and
+`tvgSwRenderer.cpp` fails at:
+
+```cpp
+#ifdef THORVG_OPENMP_SUPPORT
+    #include <omp.h>    // fatal error on Apple Clang / Emscripten
+#endif
+```
+
+Platform outcome:
+
+| Platform | Toolchain OpenMP runtime | Result without `-Dextra` override |
+|---|---|---|
+| Linux (gcc) | libgomp — found | builds, pixel loops parallelized — keep `openmp` |
+| Windows (MSVC) | vcomp — found | builds |
+| Android (NDK) | bundled libomp — found | builds |
+| **macOS** (Apple Clang) | none — not found | **build fails** (`omp.h` missing) |
+| **iOS** (Apple Clang, iOS SDK) | none — not found | **build fails** |
+| **Web** (Emscripten) | none — not found | **build fails** |
+
+### The fix in this repo
+
+Build scripts pass `-Dextra=lottie_exp` (keeping Lottie expression support,
+dropping `openmp`) where the toolchain has no OpenMP runtime:
+
+| Script | Behavior |
+|---|---|
+| `build_thorvg.sh` | platform split: macOS → `-Dextra=lottie_exp`, Linux → `-Dextra=lottie_exp,openmp` |
+| `build_thorvg_ios.sh` | always `-Dextra=lottie_exp` |
+| `build_thorvg_web.sh` | always `-Dextra=lottie_exp` |
+| `build_thorvg_android.sh` | unchanged (NDK libomp resolves fine) |
+
+For hand-rolled meson invocations: pass `-Dextra=lottie_exp` unless your
+toolchain has a working OpenMP runtime. Losing OpenMP is safe — the task
+scheduler uses `std::thread`, and the three affected loops merely run
+single-threaded.
