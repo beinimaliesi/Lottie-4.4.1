@@ -86,6 +86,20 @@ else
     echo "Non-ARM platform: Setting threads=true (OpenMP enabled)"
 fi
 
+# The 'extra' option defaults to ['lottie_exp', 'openmp'], but ThorVG's
+# meson.build defines THORVG_OPENMP_SUPPORT from the option alone, without
+# checking that dependency('openmp') actually resolved. Apple Clang ships no
+# omp.h, so tvgSwRenderer.cpp fails at '#include <omp.h>' on macOS. Keep
+# OpenMP only where a runtime exists (Linux gcc/libgomp); macOS builds fine
+# without it -- the task scheduler uses std::thread, not OpenMP.
+if [ "$(uname)" == "Darwin" ]; then
+    EXTRA_OPTION="-Dextra=lottie_exp"
+    echo "macOS detected: Disabling OpenMP (Apple Clang has no omp.h)"
+else
+    EXTRA_OPTION="-Dextra=lottie_exp,openmp"
+    echo "Linux detected: Keeping OpenMP (gcc/libgomp)"
+fi
+
 meson setup builddir \
     -Dbuildtype=release \
     -Doptimization=3 \
@@ -93,6 +107,7 @@ meson setup builddir \
     -Ddefault_library=static \
     -Dsimd=true \
     $THREADS_OPTION \
+    $EXTRA_OPTION \
     -Dpartial=true \
     -Dengines=sw \
     -Dloaders=lottie,png \

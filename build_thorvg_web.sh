@@ -84,6 +84,10 @@ if [ -d "$BUILD_DIR" ]; then
 fi
 
 echo "Configuring ThorVG for WASM..."
+# -Dextra=lottie_exp: drop the default 'openmp'. ThorVG's meson.build defines
+# THORVG_OPENMP_SUPPORT from the option alone, without checking that
+# dependency('openmp') resolved -- and Emscripten has no omp.h, which fails
+# tvgSwRenderer.cpp at '#include <omp.h>'.
 $MESON setup "$BUILD_DIR" \
     --cross-file "$CROSS_FILE" \
     -Dbuildtype=release \
@@ -92,6 +96,7 @@ $MESON setup "$BUILD_DIR" \
     -Ddefault_library=static \
     -Dthreads=false \
     -Dsimd=false \
+    -Dextra=lottie_exp \
     -Dpartial=true \
     -Dengines=sw \
     -Dloaders=lottie,png \
