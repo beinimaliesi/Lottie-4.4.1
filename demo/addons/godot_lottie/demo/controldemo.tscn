@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://cdf8kp1mnoyng"]
+[gd_scene format=3 uid="uid://cdf8kp1mnoyng"]
 
 [ext_resource type="Script" uid="uid://ddyd1usxwndmw" path="res://addons/godot_lottie/scripts/controldemo.gd" id="1_6e2k8"]
 
@@ -6,7 +6,7 @@
 script = ExtResource("1_6e2k8")
 
 [node name="LottieAnimation" type="LottieAnimation" parent="." unique_id=755252312]
-animation_path = "res://addons/godot_lottie/lotties/Godot funny.json"
+animation_path = "res://addons/godot_lottie/lotties/test_case_001/lf_planet.json"
 playing = true
 fit_box_size = Vector2i(350, 350)
 process_mode = 3
