@@ -79,6 +79,7 @@ meson setup builddir ^
   -Doptimization=3 ^
   -Db_ndebug=true ^
   -Ddefault_library=static ^
+  -Dstatic=true ^
   -Db_vscrt=mt ^
   -Dsimd=true ^
   -Dthreads=true ^

@@ -148,6 +148,7 @@ EOF
             --cross-file "$CROSSFILE" \
             -Dbuildtype=release -Doptimization=3 -Db_ndebug=true \
             -Ddefault_library=static \
+            -Dstatic=true \
             -Dsimd=true -Dthreads=true -Dpartial=true \
             -Dengines=sw -Dloaders=lottie,png -Dbindings=capi \
             -Dtests=false \

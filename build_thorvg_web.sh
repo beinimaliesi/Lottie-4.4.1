@@ -97,6 +97,7 @@ $MESON setup "$BUILD_DIR" \
     -Dthreads=false \
     -Dsimd=false \
     -Dextra=lottie_exp \
+    -Dstatic=true \
     -Dpartial=true \
     -Dengines=sw \
     -Dloaders=lottie,png \

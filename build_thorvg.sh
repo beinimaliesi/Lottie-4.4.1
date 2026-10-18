@@ -105,6 +105,7 @@ meson setup builddir \
     -Doptimization=3 \
     -Db_ndebug=true \
     -Ddefault_library=static \
+    -Dstatic=true \
     -Dsimd=true \
     $THREADS_OPTION \
     $EXTRA_OPTION \
