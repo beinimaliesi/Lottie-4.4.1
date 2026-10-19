@@ -73,8 +73,9 @@ For v1 the 3D node uses the **synchronous** render path (the 2D node's
 `_render_frame` body, with `_update` then `draw(false)` then `sync`). No
 worker thread, no frame cache, no dynamic resolution from screen scale, no
 state-machine UI. Same `.json` + `.lottie` support, same play/pause/stop/seek
-API, same `animation_finished` / `frame_changed` / `animation_loaded`
-signals — so GDScript ports 1:1 between the 2D and 3D nodes.
+API, `animation_finished` / `animation_frame_changed` / `animation_loaded`
+signals. The 3D frame signal is named `animation_frame_changed(frame)` to avoid
+conflicting with the inherited `Sprite3D.frame_changed()` signal.
 
 ---
 

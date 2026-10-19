@@ -62,7 +62,8 @@ void LottieAnimation3D::_bind_methods() {
     ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "render_size"), "set_render_size", "get_render_size");
 
     ADD_SIGNAL(MethodInfo("animation_finished"));
-    ADD_SIGNAL(MethodInfo("frame_changed", PropertyInfo(Variant::FLOAT, "frame")));
+    // Sprite3D already owns frame_changed() for its sprite-sheet frame.
+    ADD_SIGNAL(MethodInfo("animation_frame_changed", PropertyInfo(Variant::FLOAT, "frame")));
     ADD_SIGNAL(MethodInfo("animation_loaded", PropertyInfo(Variant::BOOL, "success")));
 }
 
@@ -330,7 +331,7 @@ void LottieAnimation3D::_update_animation(double delta) {
     }
 
     if ((int)prev_frame != (int)current_frame) {
-        emit_signal("frame_changed", current_frame);
+        emit_signal("animation_frame_changed", current_frame);
     }
 }
 

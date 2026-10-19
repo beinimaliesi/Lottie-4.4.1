@@ -76,7 +76,8 @@ Internally ThorVG rasterises each frame into the node's `texture` slot.
 ### Signals
 
 - `animation_finished()` — Emitted when non-looping animation ends
-- `frame_changed(frame: float)` — Emitted on frame change
+- `animation_frame_changed(frame: float)` — Emitted on Lottie frame change.
+  Inherited `Sprite3D.frame_changed()` remains the sprite-sheet signal.
 - `animation_loaded(success: bool)` — Emitted after load attempt
 
 ### Basic Usage

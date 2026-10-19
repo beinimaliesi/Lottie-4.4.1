@@ -265,6 +265,18 @@ Output is a **framework bundle** (see SConstruct line 67–73):
 Each framework contains the binary plus an `Info.plist`. The `.gdextension`
 declares those bundle paths and Godot loads them transparently.
 
+The editor uses `macos.debug` (`template_debug`); a separate `macos.editor`
+library is not required. Native-library hot reload is intentionally disabled
+(`reloadable = false`). Close and reopen the Godot Editor after rebuilding or
+replacing the extension binary. Normal scene editing, Lottie preview, and
+playback are unaffected.
+
+Validate the rebuilt extension with:
+
+```bash
+cd demo && godot -e .
+```
+
 ### 3.4 Code-signing (optional but recommended for distribution)
 
 ```bash

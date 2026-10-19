@@ -2,7 +2,8 @@
 
 entry_symbol = "godot_lottie_library_init"
 compatibility_minimum = "4.7"
-reloadable = true
+# Restart the editor after rebuilding the native library.
+reloadable = false
 
 [libraries]
 
