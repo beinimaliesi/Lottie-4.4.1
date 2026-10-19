@@ -9,12 +9,14 @@
 #
 # Usage:
 #   source /path/to/emsdk/emsdk_env.sh   # activate Emscripten
-#   ./build_thorvg_web.sh
+#   ./build_thorvg_web.sh                  # both variants
+#   WEB_VARIANTS=nothreads ./build_thorvg_web.sh
+#   WEB_VARIANTS=threads ./build_thorvg_web.sh
 #
 # Output:
-#   thirdparty/thorvg/build_wasm/src/libthorvg-1.a
+#   thirdparty/thorvg/build_wasm_{nothreads,threads}/src/libthorvg-1.a
 
-set -e
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -42,7 +44,13 @@ fi
 echo "Meson: $($MESON --version)"
 
 THORVG_DIR="$SCRIPT_DIR/thirdparty/thorvg"
-BUILD_DIR="$THORVG_DIR/build_wasm"
+WEB_VARIANTS="${WEB_VARIANTS:-nothreads threads}"
+for variant in $WEB_VARIANTS; do
+    case "$variant" in
+        nothreads|threads) ;;
+        *) echo "ERROR: unknown Web variant: $variant (expected nothreads or threads)"; exit 1 ;;
+    esac
+done
 
 # Apply upstream patches (from Godot's vendored thorvg) on a clean checkout.
 # The submodule is pinned to a tag, so patches live in the parent repo and are
@@ -57,9 +65,19 @@ apply_thorvg_patches() {
 }
 apply_thorvg_patches
 
-# Write Emscripten cross-file for Meson
-CROSS_FILE="$THORVG_DIR/emscripten.ini"
-cat > "$CROSS_FILE" <<EOF
+build_variant() {
+    local variant="$1"
+    BUILD_DIR="$THORVG_DIR/build_wasm_$variant"
+    # Both libraries are linked into a GDExtension side module. The threaded
+    # variant must also use the shared-memory ABI, even with ThorVG workers off.
+    WASM_ARGS="'-fPIC'"
+    if [ "$variant" = threads ]; then
+        WASM_ARGS="$WASM_ARGS, '-pthread'"
+    fi
+
+    # Separate cross-files allow independent builds of the two variants.
+    CROSS_FILE="$THORVG_DIR/emscripten_$variant.ini"
+    cat > "$CROSS_FILE" <<EOF
 [binaries]
 c     = 'emcc'
 cpp   = 'em++'
@@ -71,47 +89,58 @@ system     = 'emscripten'
 cpu_family = 'wasm32'
 cpu        = 'wasm32'
 endian     = 'little'
+
+[built-in options]
+cpp_args = [$WASM_ARGS]
+cpp_link_args = [$WASM_ARGS]
 EOF
 
-echo "Cross-file written: $CROSS_FILE"
+    echo "Cross-file written: $CROSS_FILE"
 
-cd "$THORVG_DIR"
+    cd "$THORVG_DIR"
 
-# Clean previous build
-if [ -d "$BUILD_DIR" ]; then
-    echo "Cleaning previous WASM build..."
-    rm -rf "$BUILD_DIR"
-fi
+    # Clean previous build
+    if [ -d "$BUILD_DIR" ]; then
+        echo "Cleaning previous WASM build..."
+        rm -rf "$BUILD_DIR"
+    fi
 
-echo "Configuring ThorVG for WASM..."
-# -Dextra=lottie_exp: drop the default 'openmp'. ThorVG's meson.build defines
-# THORVG_OPENMP_SUPPORT from the option alone, without checking that
-# dependency('openmp') resolved -- and Emscripten has no omp.h, which fails
-# tvgSwRenderer.cpp at '#include <omp.h>'.
-$MESON setup "$BUILD_DIR" \
-    --cross-file "$CROSS_FILE" \
-    -Dbuildtype=release \
-    -Doptimization=3 \
-    -Db_ndebug=true \
-    -Ddefault_library=static \
-    -Dthreads=false \
-    -Dsimd=false \
-    -Dextra=lottie_exp \
-    -Dstatic=true \
-    -Dpartial=true \
-    -Dengines=sw \
-    -Dloaders=lottie,png \
-    -Dbindings=capi \
-    -Dtests=false \
-    --backend=ninja \
-    --wipe
+    echo "Configuring ThorVG for WASM ($variant)..."
+    # Keep ThorVG workers disabled in both variants; threads here selects the
+    # Godot/Emscripten ABI, not a change to the renderer scheduling policy.
+    # -Dextra=lottie_exp: drop the default 'openmp'. ThorVG's meson.build defines
+    # THORVG_OPENMP_SUPPORT from the option alone, without checking that
+    # dependency('openmp') resolved -- and Emscripten has no omp.h, which fails
+    # tvgSwRenderer.cpp at '#include <omp.h>'.
+    $MESON setup "$BUILD_DIR" \
+        --cross-file "$CROSS_FILE" \
+        -Dbuildtype=release \
+        -Doptimization=3 \
+        -Db_ndebug=true \
+        -Ddefault_library=static \
+        -Dthreads=false \
+        -Dsimd=false \
+        -Dextra=lottie_exp \
+        -Dstatic=true \
+        -Dpartial=true \
+        -Dengines=sw \
+        -Dloaders=lottie,png \
+        -Dbindings=capi \
+        -Dtests=false \
+        --backend=ninja
 
-echo
-echo "Building ThorVG WASM..."
-$MESON compile -C "$BUILD_DIR" -j"$(nproc 2>/dev/null || echo 4)"
+    echo
+    echo "Building ThorVG WASM..."
+    $MESON compile -C "$BUILD_DIR" -j"$(nproc 2>/dev/null || echo 4)"
 
-echo
-echo "========================================"
-echo "ThorVG WASM build complete!"
-echo "Output: $BUILD_DIR/src/libthorvg-1.a"
-echo "========================================"
+    echo
+    echo "========================================"
+    echo "ThorVG WASM build complete!"
+    echo "Output: $BUILD_DIR/src/libthorvg-1.a"
+    echo "========================================"
+
+}
+
+for variant in $WEB_VARIANTS; do
+    build_variant "$variant"
+done

@@ -29,6 +29,8 @@ thirdparty/godot-cpp/__pycache__/
 # ThorVG - build artifacts
 thirdparty/thorvg/builddir/
 thirdparty/thorvg/build_wasm/
+thirdparty/thorvg/build_wasm_*/
+thirdparty/thorvg/emscripten_*.ini
 thirdparty/thorvg/.sconsign.dblite
 
 # Python

@@ -47,7 +47,12 @@ if env["platform"] == "android":
 # ThorVG build, so we look in arch-specific build directories for those.
 # Native desktop builds use the canonical `builddir`.
 if env["platform"] == "web":
-    thorvg_lib_dir = os.path.join("thirdparty", "thorvg", "build_wasm", "src")
+    web_variant = "threads" if env["threads"] else "nothreads"
+    thorvg_lib_dir = os.path.join("thirdparty", "thorvg", "build_wasm_" + web_variant, "src")
+    if not os.path.isfile(os.path.join(thorvg_lib_dir, "libthorvg-1.a")):
+        print("Error: missing ThorVG Web library for {}. Run:".format(web_variant))
+        print("  WEB_VARIANTS={} ./build_thorvg_web.sh".format(web_variant))
+        Exit(1)
 elif env["platform"] == "android":
     arch = env.get("arch", "arm64")
     thorvg_lib_dir = os.path.join("thirdparty", "thorvg", "builddir_android_" + arch, "src")

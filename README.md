@@ -152,6 +152,41 @@ python -m SCons platform=macos target=template_release
 
 > **Note**: On Windows, the build automatically copies `thorvg-1.dll` to the addon's bin directory. Linux and macOS use static linking and don't require runtime libraries.
 
+### Web: single-threaded and threaded variants
+
+Use Emscripten **4.0.20** to match the Godot 4.7.2 official Web templates
+(including their C++ standard library ABI). Activate that SDK and install
+Meson, Ninja and SCons, then run:
+
+```bash
+./build_thorvg_web.sh
+for threads in no yes; do
+    for target in template_debug template_release; do
+        scons platform=web arch=wasm32 target=$target threads=$threads
+    done
+done
+```
+
+The ThorVG script builds `build_wasm_nothreads` and `build_wasm_threads`
+separately. Set `WEB_VARIANTS=nothreads` or `WEB_VARIANTS=threads` to build
+only one. The threaded library uses `-pthread`; ThorVG's internal worker
+pool stays disabled in both variants, preserving the existing Web rendering
+behavior.
+
+The extension produces four WASM files: debug/release with `.nothreads.wasm`
+and debug/release with `.wasm` (no `.threads` suffix). The `.gdextension`
+selects the matching library using feature tags; the `nothreads` entries
+must precede the generic Web entries.
+
+Enable **Extensions Support** in the Godot Web export preset and select
+**Thread Support** as needed. Build both variants before distributing the
+addon. Include `*.lottie` in the export preset's non-resource file filter
+when using dotLottie archives. Use `;` for comments in `.gdextension` files
+(Godot ConfigFile syntax); `#` can corrupt the following library key.
+This supports either export mode; it does not implement browser-time
+automatic fallback between two exported games. The CI Web job builds both
+thread modes for the selected debug/release targets.
+
 ## Build Configuration
 
 ### ThorVG Optimizations

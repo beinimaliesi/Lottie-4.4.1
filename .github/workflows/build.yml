@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       web:
-        description: 'Web/WASM (.wasm, nothreads)'
+        description: 'Web/WASM (.wasm, nothreads + threads)'
         type: boolean
         default: false
       targets:
@@ -308,7 +308,7 @@ jobs:
       - name: Set up Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.64
+          version: 4.0.20
 
       - name: Build ThorVG (WASM)
         run: |
@@ -317,17 +317,23 @@ jobs:
 
       - name: Build extension (WASM)
         run: |
-          if [ "${{ inputs.targets }}" != "release_only" ]; then
-            python3 -m SCons platform=web target=template_debug arch=wasm32 threads=no -j$(nproc)
-          fi
-          if [ "${{ inputs.targets }}" != "debug_only" ]; then
-            python3 -m SCons platform=web target=template_release arch=wasm32 threads=no -j$(nproc)
-          fi
+          # Remove checked-in binaries so the artifact contains only this run's targets.
+          rm -f demo/addons/godot_lottie/bin/libgodot_lottie.web.template_*.wasm32*.wasm
+
+          for threads in no yes; do
+            if [ "${{ inputs.targets }}" != "release_only" ]; then
+              python3 -m SCons platform=web target=template_debug arch=wasm32 threads=$threads -j$(nproc)
+            fi
+            if [ "${{ inputs.targets }}" != "debug_only" ]; then
+              python3 -m SCons platform=web target=template_release arch=wasm32 threads=$threads -j$(nproc)
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: web
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.web.template_*.wasm32.nothreads.wasm
+          path: demo/addons/godot_lottie/bin/libgodot_lottie.web.template_*.wasm32*.wasm
+          if-no-files-found: error
 
   # ----------------------------------------------------------------------
   # Optional: auto-commit the freshly built artifacts back to main.
@@ -359,7 +365,7 @@ jobs:
             echo "No artifact changes to commit."
           else
             BUILT=""
-            for flag in windows_x86_64 linux_x86_64 macos ios android_arm64 android_x86_64; do
+            for flag in windows_x86_64 linux_x86_64 macos ios android_arm64 android_x86_64 web; do
               if [ "$(echo '${{ toJSON(inputs) }}' | python3 -c 'import json,sys; print(json.load(sys.stdin).get("'"$flag"'"))')" = "True" ]; then
                 BUILT="$BUILT $flag"
               fi

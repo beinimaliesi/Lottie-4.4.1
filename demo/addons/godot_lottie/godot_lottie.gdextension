@@ -2,7 +2,7 @@
 
 entry_symbol = "godot_lottie_library_init"
 compatibility_minimum = "4.7"
-# Restart the editor after rebuilding the native library.
+; Restart the editor after rebuilding the native library.
 reloadable = false
 
 [libraries]
@@ -23,15 +23,18 @@ android.debug.x86_64 = "res://addons/godot_lottie/bin/libgodot_lottie.android.te
 android.release.x86_64 = "res://addons/godot_lottie/bin/libgodot_lottie.android.template_release.x86_64.so"
 android.debug.arm64 = "res://addons/godot_lottie/bin/libgodot_lottie.android.template_debug.arm64.so"
 android.release.arm64 = "res://addons/godot_lottie/bin/libgodot_lottie.android.template_release.arm64.so"
-web.debug.wasm32 = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_debug.wasm32.nothreads.wasm"
-web.release.wasm32 = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_release.wasm32.nothreads.wasm"
+; Specific nothreads entries must precede the threaded fallback.
+web.debug.wasm32.nothreads = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_debug.wasm32.nothreads.wasm"
+web.release.wasm32.nothreads = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_release.wasm32.nothreads.wasm"
+web.debug.wasm32 = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_debug.wasm32.wasm"
+web.release.wasm32 = "res://addons/godot_lottie/bin/libgodot_lottie.web.template_release.wasm32.wasm"
 
 [dependencies]
 
-# Android: ship the NDK r26 libc++_shared.so per ABI. Our .so was built
-# against NDK clang++ which links against libc++_shared.so dynamically;
-# without these, dlopen() of the extension fails on device with
-# "cannot locate symbol _ZNSt6__ndk1...".
+; Android: ship the NDK r26 libc++_shared.so per ABI. Our .so was built
+; against NDK clang++ which links against libc++_shared.so dynamically;
+; without these, dlopen() of the extension fails on device with
+; "cannot locate symbol _ZNSt6__ndk1...".
 
 android.debug.arm64 = {"res://addons/godot_lottie/bin/android/arm64/libc++_shared.so": ""}
 android.release.arm64 = {"res://addons/godot_lottie/bin/android/arm64/libc++_shared.so": ""}
