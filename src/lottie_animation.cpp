@@ -831,11 +831,13 @@ bool LottieAnimation::_load_animation(const String& path) {
         return picture->load(ap.utf8().get_data()) == tvg::Result::Success;
     };
 
+    String loaded_path = source_path;
     bool loaded_ok = _try_load_path(source_path);
     if (!loaded_ok) {
         String mirrored = _mirror_file_to_user_cache(source_path);
         if (!mirrored.is_empty()) {
             loaded_ok = _try_load_path(mirrored);
+            if (loaded_ok) loaded_path = mirrored;
         }
     }
     if (!loaded_ok) {
@@ -874,7 +876,8 @@ bool LottieAnimation::_load_animation(const String& path) {
     
     _create_texture();
     if (render_thread_enabled) {
-        _post_load_to_worker(source_path);
+        // The native worker cannot read res:// files inside an exported PCK.
+        _post_load_to_worker(loaded_path);
         _post_render_to_worker(render_size, current_frame);
     } else {
         _render_frame(); // Draw initial frame immediately
