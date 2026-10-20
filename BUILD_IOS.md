@@ -20,11 +20,13 @@ VARIANTS=device ./build_extension_ios.sh
 
 两个脚本默认最低 iOS 版本为 15.0，可用相同的 `MIN_IOS` 覆盖。扩展构建可用 `TARGETS=template_debug` 或 `TARGETS=template_release` 选择单一配置。
 
+SCons 生成的 `.dylib` 和打包临时目录位于项目根目录的 `build/ios/`，不放入插件发布目录。
+
 产物位于：
 
 ```text
-demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_debug.xcframework/
-demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_release.xcframework/
+demo/addons/godot_lottie/bin/ios/libgodot_lottie.ios.template_debug.xcframework/
+demo/addons/godot_lottie/bin/ios/libgodot_lottie.ios.template_release.xcframework/
 ```
 
 `VARIANTS=device` 更新真机切片并保留现有模拟器动态库；默认完整构建会替换全部切片。未重新编译的切片不代表已验证本次源码修复。iOS 使用动态库，在 `SConstruct` 内完整链接 godot-cpp 与 ThorVG；Godot 导出时负责包装成 framework 并签名。不要把不完整的静态库改名为动态库或在消费项目手工拼接库。

@@ -293,7 +293,7 @@ First build is slow (~10 minutes) because SCons compiles ~990 auto-generated
 godot-cpp class wrappers before getting to our 5 source files. Subsequent
 incremental builds take seconds.
 
-Output: `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.dll`
+Output: `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.dll`
 (631 KB for this change). The SConstruct also auto-copies `thorvg-1.dll`
 next to it.
 
@@ -305,7 +305,7 @@ Compiling shared src\lottie_animation_3d.cpp ...
 Compiling shared src\lottie_animation.cpp ...
 Compiling shared src\lottie_state_machine.cpp ...
 Compiling shared src\register_types.cpp ...
-Linking Shared Library demo\addons\godot_lottie\bin\libgodot_lottie.windows.template_debug.x86_64.dll ...
+Linking Shared Library demo\addons\godot_lottie\bin\windows\libgodot_lottie.windows.template_debug.x86_64.dll ...
 ```
 
 If `lottie_animation_3d.cpp` isn't in the compile list, your `src/*.cpp`
@@ -319,7 +319,7 @@ Confirm the class is in the DLL:
 
 ```bash
 grep -aoc "LottieAnimation3D" \
-  demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.dll
+  demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.dll
 # Expect a small positive number (the class name appears in the bind
 # registration string and signal/method names).
 ```
@@ -382,10 +382,10 @@ git add \
   demo/addons/godot_lottie/icons/LottieAnimation3D.svg \
   demo/addons/godot_lottie/icons/LottieAnimation3D.svg.import \
   demo/addons/godot_lottie/demo/demo3d.tscn \
-  demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.dll \
-  demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.exp \
-  demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.lib \
-  demo/addons/godot_lottie/bin/thorvg-1.dll \
+  demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.dll \
+  demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.exp \
+  demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.lib \
+  demo/addons/godot_lottie/bin/windows/thorvg-1.dll \
   API.md \
   README.md
 ```
@@ -426,10 +426,10 @@ credential.
 | modified | `demo/addons/godot_lottie/godot_lottie.gdextension` |
 | modified | `API.md` |
 | modified | `README.md` |
-| modified | `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.dll` (rebuilt) |
-| modified | `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.exp` |
-| modified | `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.lib` |
-| modified | `demo/addons/godot_lottie/bin/thorvg-1.dll` (rebuilt) |
+| modified | `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.dll` (rebuilt) |
+| modified | `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.exp` |
+| modified | `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.lib` |
+| modified | `demo/addons/godot_lottie/bin/windows/thorvg-1.dll` (rebuilt) |
 
 Untouched: `src/lottie_animation.h/.cpp`, `src/lottie_frame_cache.*`,
 `src/lottie_state_machine.*`, `SConstruct`.

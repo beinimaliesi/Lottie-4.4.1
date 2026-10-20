@@ -9,7 +9,8 @@ set -euo pipefail
 
 [[ "$(uname -s)" == Darwin ]] || { echo "iOS builds require macOS and Xcode." >&2; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN_DIR="$SCRIPT_DIR/demo/addons/godot_lottie/bin"
+BIN_DIR="$SCRIPT_DIR/demo/addons/godot_lottie/bin/ios"
+BUILD_DIR="$SCRIPT_DIR/build/ios"
 TARGETS="${TARGETS:-template_debug template_release}"
 VARIANTS="${VARIANTS:-device sim-arm64 sim-x86_64}"
 MIN_IOS="${MIN_IOS:-15.0}"
@@ -42,8 +43,8 @@ for variant in $VARIANTS; do
     }
 done
 
-mkdir -p "$BIN_DIR"
-STAGE="$(mktemp -d "$BIN_DIR/.ios-build.XXXXXX")"
+mkdir -p "$BIN_DIR" "$BUILD_DIR"
+STAGE="$(mktemp -d "$BUILD_DIR/.ios-build.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 cd "$SCRIPT_DIR"
 for target in $TARGETS; do
@@ -58,7 +59,7 @@ for target in $TARGETS; do
         "${SCONS[@]}" platform=ios "target=$target" "arch=$arch" \
             "ios_simulator=$simulator" "ios_min_version=$MIN_IOS" -j"$JOBS"
         name="libgodot_lottie.ios.$target.$suffix.dylib"
-        produced="$BIN_DIR/$name"
+        produced="$BUILD_DIR/$name"
         [[ -f "$produced" ]] || { echo "Missing artifact: $produced" >&2; exit 1; }
         cp "$produced" "$STAGE/$name"
         if [[ "$simulator" == no ]]; then

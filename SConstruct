@@ -38,7 +38,8 @@ env.Append(CPPDEFINES=["TVG_STATIC"])
 # Android: statically link libc++ into the extension so the .so does not
 # require libc++_shared.so to be present alongside it at runtime.
 if env["platform"] == "android":
-    env.Append(LINKFLAGS=["-static-libstdc++"])
+    # ThorVG's software renderer uses OpenMP; include its runtime as well.
+    env.Append(LINKFLAGS=["-static-libstdc++", "-fopenmp", "-static-openmp"])
 
 
 # Determine ThorVG library location and linking method.
@@ -118,10 +119,13 @@ else:
     print("  Windows: build_thorvg.bat") 
     print("  Linux/macOS: ./build_thorvg.sh")
 
+# Platform-specific distribution directory. iOS dylibs are packaging intermediates.
+bin_dir = os.path.join("demo", "addons", "godot_lottie", "bin", env["platform"])
+
 # Output library name
 if env["platform"] == "macos":
     library = env.SharedLibrary(
-        "demo/addons/godot_lottie/bin/libgodot_lottie.{}.{}.framework/libgodot_lottie.{}.{}".format(
+        os.path.join(bin_dir, "libgodot_lottie.{}.{}.framework/libgodot_lottie.{}.{}").format(
             env["platform"], env["target"], env["platform"], env["target"]
         ),
         source=sources,
@@ -132,12 +136,12 @@ elif env["platform"] == "ios":
     name = "libgodot_lottie{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
     env.Append(LINKFLAGS=["-Wl,-install_name,@rpath/" + name])
     library = env.SharedLibrary(
-        "demo/addons/godot_lottie/bin/" + name,
+        os.path.join("build", "ios", name),
         source=sources,
     )
 else:
     library = env.SharedLibrary(
-        "demo/addons/godot_lottie/bin/libgodot_lottie{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        os.path.join(bin_dir, "libgodot_lottie{}{}".format(env["suffix"], env["SHLIBSUFFIX"])),
         source=sources,
     )
 
@@ -147,7 +151,7 @@ Default(library)
 if env["platform"] == "windows":
     thorvg_runtime_dir = thorvg_lib_dir if 'thorvg_lib_dir' in locals() else os.path.join("thirdparty", "thorvg", "builddir", "src")
     thorvg_runtime = os.path.join(thorvg_runtime_dir, "thorvg-1.dll")
-    dest_dir = os.path.join("demo", "addons", "godot_lottie", "bin")
+    dest_dir = bin_dir
     dest_dll = os.path.join(dest_dir, "thorvg-1.dll")
 
     if os.path.isfile(thorvg_runtime):

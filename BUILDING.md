@@ -108,9 +108,9 @@ First build is ~10 min (godot-cpp's ~990 wrapper classes compile once).
 Subsequent incremental builds are seconds.
 
 Output:
-- `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_debug.x86_64.dll`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_release.x86_64.dll`
-- `demo/addons/godot_lottie/bin/thorvg-1.dll` (auto-copied by SConstruct)
+- `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_debug.x86_64.dll`
+- `demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_release.x86_64.dll`
+- `demo/addons/godot_lottie/bin/windows/thorvg-1.dll` (auto-copied by SConstruct)
 
 ### 1.4 Windows x86_32 (📋)
 
@@ -165,8 +165,8 @@ python3 -m SCons platform=linux target=template_release arch=x86_64 -j$(nproc)
 ```
 
 Output:
-- `demo/addons/godot_lottie/bin/libgodot_lottie.linux.template_debug.x86_64.so`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.linux.template_release.x86_64.so`
+- `demo/addons/godot_lottie/bin/linux/libgodot_lottie.linux.template_debug.x86_64.so`
+- `demo/addons/godot_lottie/bin/linux/libgodot_lottie.linux.template_release.x86_64.so`
 
 (No runtime `.so` is copied — ThorVG is statically linked on Linux.)
 
@@ -259,8 +259,8 @@ python3 -m SCons platform=macos target=template_release arch=universal -j$(sysct
 
 Output is a **framework bundle** (see SConstruct line 67–73):
 
-- `demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_debug.framework/`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_release.framework/`
+- `demo/addons/godot_lottie/bin/macos/libgodot_lottie.macos.template_debug.framework/`
+- `demo/addons/godot_lottie/bin/macos/libgodot_lottie.macos.template_release.framework/`
 
 Each framework contains the binary plus an `Info.plist`. The `.gdextension`
 declares those bundle paths and Godot loads them transparently.
@@ -281,7 +281,7 @@ cd demo && godot -e .
 
 ```bash
 codesign --force --sign - --options runtime \
-  demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_release.framework
+  demo/addons/godot_lottie/bin/macos/libgodot_lottie.macos.template_release.framework
 ```
 
 Replace `-` with a Developer ID for notarisation-ready signing.
@@ -422,10 +422,10 @@ python -m SCons platform=android target=template_release arch=x86_64 -jN
 
 Each `.so` is ~2 MB (debug) / 2 MB (release). Full set:
 
-- `demo/addons/godot_lottie/bin/libgodot_lottie.android.template_debug.arm64.so`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.android.template_release.arm64.so`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.android.template_debug.x86_64.so`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.android.template_release.x86_64.so`
+- `demo/addons/godot_lottie/bin/android/libgodot_lottie.android.template_debug.arm64.so`
+- `demo/addons/godot_lottie/bin/android/libgodot_lottie.android.template_release.arm64.so`
+- `demo/addons/godot_lottie/bin/android/libgodot_lottie.android.template_debug.x86_64.so`
+- `demo/addons/godot_lottie/bin/android/libgodot_lottie.android.template_release.x86_64.so`
 
 First build per target+arch combination is slow (~10 min: godot-cpp's ~1000
 wrapper classes recompile per Android variant). All four together ~40 min on
@@ -434,7 +434,7 @@ a modern laptop.
 ### 4.5 Verify the symbols are in each `.so`
 
 ```bash
-for f in demo/addons/godot_lottie/bin/libgodot_lottie.android.*.so; do
+for f in demo/addons/godot_lottie/bin/android/libgodot_lottie.android.*.so; do
   printf "%-70s LottieAnimation3D count: %s\n" \
     "$(basename $f)" "$(grep -aoc 'LottieAnimation3D' $f)"
 done
@@ -575,8 +575,8 @@ The script runs SCons three times per target (`template_debug`,
 combines the simulator dylibs with `lipo`, then invokes
 `xcodebuild -create-xcframework` to produce:
 
-- `demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_debug.xcframework/`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_release.xcframework/`
+- `demo/addons/godot_lottie/bin/ios/libgodot_lottie.ios.template_debug.xcframework/`
+- `demo/addons/godot_lottie/bin/ios/libgodot_lottie.ios.template_release.xcframework/`
 
 These are what the `.gdextension` references for the iOS platform.
 
@@ -709,8 +709,8 @@ SCons will pick up `emcc` from PATH (which `emsdk_env.sh` put there).
 
 Output:
 
-- `demo/addons/godot_lottie/bin/libgodot_lottie.web.template_debug.wasm32.nothreads.wasm`
-- `demo/addons/godot_lottie/bin/libgodot_lottie.web.template_release.wasm32.nothreads.wasm`
+- `demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_debug.wasm32.nothreads.wasm`
+- `demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_release.wasm32.nothreads.wasm`
 
 ### 6.4 Testing in the browser
 
@@ -807,10 +807,15 @@ Build time is roughly the slowest one (~10–20 minutes), not the sum.
 
 ### Where the binaries end up
 
+The addon keeps `godot_lottie.gdextension` at its root. Distributed binaries
+live under `bin/<platform>/`, where `<platform>` is `android`, `ios`, `macos`,
+`web`, `windows`, or `linux`. iOS packaging intermediates live in the repository's
+`build/ios/`; only the final XCFrameworks go into `bin/ios/`.
+
 - **Always**: as job artifacts on the workflow run page. Download manually
-  → unzip → drop into your project's `addons/godot_lottie/bin/`.
+  → unzip → drop into your project's `addons/godot_lottie/bin/<platform>/`.
 - **If `Auto-commit ...` was ticked**: a follow-up `commit` job downloads
-  all artifacts, drops them into `demo/addons/godot_lottie/bin/`, and
+  all artifacts, places them in `demo/addons/godot_lottie/bin/<platform>/`, and
   pushes a commit with a message like:
   ```
   ci: rebuild binaries via workflow_dispatch (linux_x86_64 ios)

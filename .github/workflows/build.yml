@@ -83,8 +83,8 @@ jobs:
         with:
           name: windows-x86_64
           path: |
-            demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_*.x86_64.dll
-            demo/addons/godot_lottie/bin/libgodot_lottie.windows.template_*.x86_64.lib
+            demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_*.x86_64.dll
+            demo/addons/godot_lottie/bin/windows/libgodot_lottie.windows.template_*.x86_64.lib
 
   # ----------------------------------------------------------------------
   linux-latest:
@@ -119,7 +119,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64-latest
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.linux.template_*.x86_64.so
+          path: demo/addons/godot_lottie/bin/linux/libgodot_lottie.linux.template_*.x86_64.so
 
   # Linux build for older systems (Ubuntu 20.04 = GLIBC 2.31)
   linux-compat:
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-x86_64-compat
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.linux.template_*.x86_64.so
+          path: demo/addons/godot_lottie/bin/linux/libgodot_lottie.linux.template_*.x86_64.so
 
   # ----------------------------------------------------------------------
   macos:
@@ -189,7 +189,7 @@ jobs:
 
       - name: Verify universal slices
         run: |
-          for fw in demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_*.framework; do
+          for fw in demo/addons/godot_lottie/bin/macos/libgodot_lottie.macos.template_*.framework; do
             lipo -info "$fw/libgodot_lottie.macos."*
             file "$fw/libgodot_lottie.macos."*
           done
@@ -197,7 +197,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-universal
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.macos.template_*.framework/
+          path: demo/addons/godot_lottie/bin/macos/libgodot_lottie.macos.template_*.framework/
 
   # ----------------------------------------------------------------------
   ios:
@@ -229,7 +229,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ios
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_*.xcframework/
+          path: demo/addons/godot_lottie/bin/ios/libgodot_lottie.ios.template_*.xcframework/
 
   # ----------------------------------------------------------------------
   android:
@@ -287,7 +287,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.android.template_*.so
+          path: demo/addons/godot_lottie/bin/android/libgodot_lottie.android.template_*.so
 
   # ----------------------------------------------------------------------
   web:
@@ -318,7 +318,7 @@ jobs:
       - name: Build extension (WASM)
         run: |
           # Remove checked-in binaries so the artifact contains only this run's targets.
-          rm -f demo/addons/godot_lottie/bin/libgodot_lottie.web.template_*.wasm32*.wasm
+          rm -f demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_*.wasm32*.wasm
 
           for threads in no yes; do
             if [ "${{ inputs.targets }}" != "release_only" ]; then
@@ -332,7 +332,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: web
-          path: demo/addons/godot_lottie/bin/libgodot_lottie.web.template_*.wasm32*.wasm
+          path: demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_*.wasm32*.wasm
           if-no-files-found: error
 
   # ----------------------------------------------------------------------
@@ -353,8 +353,25 @@ jobs:
       - name: Download all built artifacts
         uses: actions/download-artifact@v4
         with:
-          path: demo/addons/godot_lottie/bin/
-          merge-multiple: true
+          path: downloaded-artifacts/
+
+      - name: Place artifacts in platform directories
+        shell: bash
+        run: |
+          for artifact in downloaded-artifacts/*; do
+            [ -d "$artifact" ] || continue
+            name="$(basename "$artifact")"
+            case "$name" in
+              windows-*) platform=windows ;;
+              linux-*) platform=linux ;;
+              macos-*) platform=macos ;;
+              ios|android|web) platform="$name" ;;
+              *) echo "Unexpected artifact: $name" >&2; exit 1 ;;
+            esac
+            destination="demo/addons/godot_lottie/bin/$platform"
+            mkdir -p "$destination"
+            cp -R "$artifact/." "$destination/"
+          done
 
       - name: Commit and push (if anything changed)
         run: |
