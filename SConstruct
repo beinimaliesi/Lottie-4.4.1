@@ -127,12 +127,12 @@ if env["platform"] == "macos":
         source=sources,
     )
 elif env["platform"] == "ios":
-    # Build as a static library so the entry point symbol ends up in the app
-    # binary. Godot's iOS dlopen fallback (RTLD_SELF) then finds it at runtime
-    # without needing a working dlopen path for the xcframework.
-    # build_extension_ios.sh merges this .a with ThorVG's .a via libtool.
-    library = env.StaticLibrary(
-        "demo/addons/godot_lottie/bin/libgodot_lottie{}.a".format(env["suffix"]),
+    # Link godot-cpp and ThorVG into the dylib here. Godot's exporter wraps
+    # each dynamic XCFramework slice as a signed framework for the app.
+    name = "libgodot_lottie{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+    env.Append(LINKFLAGS=["-Wl,-install_name,@rpath/" + name])
+    library = env.SharedLibrary(
+        "demo/addons/godot_lottie/bin/" + name,
         source=sources,
     )
 else:

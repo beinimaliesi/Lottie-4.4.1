@@ -1,246 +1,123 @@
 #!/usr/bin/env bash
-#
-# iOS Extension Build Script (macOS host with Xcode required)
-# Builds the LottieAnimation GDExtension as a .xcframework containing
-# iOS device + iOS Simulator slices, ready to be referenced by the
-# .gdextension as `ios.debug` / `ios.release`.
-#
-# Requires that ThorVG has already been built for iOS:
-#   ./build_thorvg_ios.sh
-#
-# Optional env knobs:
-#   TARGETS  -- space-separated subset of {template_debug template_release}
-#               (default builds both)
-#   VARIANTS -- space-separated subset of {device sim-arm64 sim-x86_64}
-#               (default builds all three)
-#
-# Outputs:
-#   demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_debug.xcframework/
-#   demo/addons/godot_lottie/bin/libgodot_lottie.ios.template_release.xcframework/
+# Build dynamic iOS XCFrameworks from this repository's sources.
+# Requires ./build_thorvg_ios.sh first.
+# TARGETS: template_debug template_release (default: both)
+# VARIANTS: device sim-arm64 sim-x86_64 (default: all)
+# MIN_IOS: minimum deployment target (default: 15.0)
+# JOBS: parallel compiler jobs (default: 8)
+set -euo pipefail
 
-set -e
-
-if [ "$(uname -s)" != "Darwin" ]; then
-    echo "ERROR: iOS builds require a macOS host with Xcode."
-    exit 1
-fi
-
-if ! command -v xcodebuild >/dev/null 2>&1; then
-    echo "ERROR: xcodebuild not found. Install Xcode (full install, not just CLT)."
-    exit 1
-fi
-
-TARGETS="${TARGETS:-template_debug template_release}"
-VARIANTS="${VARIANTS:-device sim-arm64 sim-x86_64}"
-
+[[ "$(uname -s)" == Darwin ]] || { echo "iOS builds require macOS and Xcode." >&2; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$SCRIPT_DIR/demo/addons/godot_lottie/bin"
-INTERMEDIATES="$BIN_DIR/ios_intermediates"
-
-mkdir -p "$INTERMEDIATES"
-
-# Resolve SCons invocation. `brew install scons` on macOS provides a
-# standalone `scons` binary but NOT a Python `SCons` module, so
-# `python3 -m SCons` fails there. Conversely, `pip install --user scons`
-# on Linux makes both available. Prefer the `scons` script when present.
+TARGETS="${TARGETS:-template_debug template_release}"
+VARIANTS="${VARIANTS:-device sim-arm64 sim-x86_64}"
+MIN_IOS="${MIN_IOS:-15.0}"
+JOBS="${JOBS:-8}"
 if command -v scons >/dev/null 2>&1; then
-    SCONS="scons"
-elif python3 -m SCons --version >/dev/null 2>&1; then
-    SCONS="python3 -m SCons"
-elif python -m SCons --version >/dev/null 2>&1; then
-    SCONS="python -m SCons"
+    SCONS=(scons)
 else
-    echo "ERROR: SCons not found. Install with:"
-    echo "  brew install scons              (macOS)"
-    echo "  pip3 install --user scons       (anywhere)"
-    exit 1
+    SCONS=(python3 -m SCons)
 fi
-echo "Using SCons: $SCONS"
 
-# ---- Verify ThorVG iOS builds exist --------------------------------------
-
-require_thorvg() {
-    local NAME="$1"
-    local LIB="$SCRIPT_DIR/thirdparty/thorvg/builddir_$NAME/src/libthorvg-1.a"
-    if [ ! -f "$LIB" ]; then
-        echo "ERROR: ThorVG iOS build missing: $LIB"
-        echo "       Run: ./build_thorvg_ios.sh"
-        exit 1
-    fi
-}
-
-for v in $VARIANTS; do
-    case "$v" in
-        device)      require_thorvg ios-arm64 ;;
-        sim-arm64)   require_thorvg ios-arm64-simulator ;;
-        sim-x86_64)  require_thorvg ios-x86_64-simulator ;;
+for target in $TARGETS; do
+    case "$target" in
+        template_debug|template_release) ;;
+        *) echo "Unknown target: $target" >&2; exit 1 ;;
     esac
 done
-
-# ---- Build each (target, variant) combo via SCons ------------------------
-
-build_variant() {
-    local TARGET="$1"  # template_debug / template_release
-    local VARIANT="$2" # device / sim-arm64 / sim-x86_64
-
-    local ARCH SIM_FLAG OUT_NAME THORVG_BUILDDIR
-    case "$VARIANT" in
-        device)
-            ARCH="arm64"; SIM_FLAG="ios_simulator=no"
-            OUT_NAME="libgodot_lottie.ios.$TARGET.arm64.a"
-            THORVG_BUILDDIR="$SCRIPT_DIR/thirdparty/thorvg/builddir_ios-arm64"
-            ;;
-        sim-arm64)
-            ARCH="arm64"; SIM_FLAG="ios_simulator=yes"
-            OUT_NAME="libgodot_lottie.ios.$TARGET.arm64.simulator.a"
-            THORVG_BUILDDIR="$SCRIPT_DIR/thirdparty/thorvg/builddir_ios-arm64-simulator"
-            ;;
-        sim-x86_64)
-            ARCH="x86_64"; SIM_FLAG="ios_simulator=yes"
-            OUT_NAME="libgodot_lottie.ios.$TARGET.x86_64.simulator.a"
-            THORVG_BUILDDIR="$SCRIPT_DIR/thirdparty/thorvg/builddir_ios-x86_64-simulator"
-            ;;
+for variant in $VARIANTS; do
+    case "$variant" in
+        device) thorvg_variant=ios-arm64 ;;
+        sim-arm64) thorvg_variant=ios-arm64-simulator ;;
+        sim-x86_64) thorvg_variant=ios-x86_64-simulator ;;
+        *) echo "Unknown variant: $variant" >&2; exit 1 ;;
     esac
+    config="$SCRIPT_DIR/thirdparty/thorvg/builddir_$thorvg_variant/config.h"
+    [[ -f "$SCRIPT_DIR/thirdparty/thorvg/builddir_$thorvg_variant/src/libthorvg-1.a" ]] || {
+        echo "Missing ThorVG $variant. Run build_thorvg_ios.sh first." >&2; exit 1;
+    }
+    grep -q '^#define THORVG_PNG_LOADER_SUPPORT 1' "$config" || {
+        echo "ThorVG $variant must enable the PNG loader." >&2; exit 1;
+    }
+done
 
-    echo
-    echo "=== SCons: ios $TARGET $VARIANT (arch=$ARCH $SIM_FLAG) ==="
-
-    cd "$SCRIPT_DIR"
-    $SCONS platform=ios "target=$TARGET" "arch=$ARCH" "$SIM_FLAG" \
-        dlink_enabled=no \
-        -j"$(sysctl -n hw.ncpu)"
-
-    # SCons now produces a .a (StaticLibrary). Locate it in bin/.
-    echo "bin/ contents after SCons:"
-    ls -la "$BIN_DIR" 2>&1 | head -20
-    local PRODUCED
-    PRODUCED="$(ls "$BIN_DIR"/libgodot_lottie.ios.${TARGET}*.a 2>/dev/null | head -1)"
-    if [ -z "$PRODUCED" ] || [ ! -f "$PRODUCED" ]; then
-        echo "ERROR: SCons did not produce a .a for ios $TARGET $VARIANT"
-        exit 1
-    fi
-
-    # Find the godot-cpp static library produced by SConscript.
-    # godot-cpp 4.5+ appends .simulator to the lib name for simulator builds;
-    # 4.4.x does not. Use exact paths (not a glob) so that a leftover device
-    # arm64.a is never picked up for a simulator build, which would produce a
-    # mixed-platform archive and trigger "binaries with multiple platforms
-    # not supported" from xcodebuild -create-xcframework.
-    local GODOT_CPP_LIB
-    local GCPP_BIN="$SCRIPT_DIR/thirdparty/godot-cpp/bin"
-    if [ "$SIM_FLAG" = "ios_simulator=yes" ]; then
-        # Prefer the .simulator.a produced by godot-cpp 4.5+; fall back to
-        # the plain .a produced by 4.4.x (overwritten by the simulator SCons
-        # run, so it contains simulator objects by the time we reach here).
-        GODOT_CPP_LIB="$GCPP_BIN/libgodot-cpp.ios.${TARGET}.${ARCH}.simulator.a"
-        [ -f "$GODOT_CPP_LIB" ] || \
-            GODOT_CPP_LIB="$GCPP_BIN/libgodot-cpp.ios.${TARGET}.${ARCH}.a"
-    else
-        # Device: use the plain .a (never pick up a same-arch simulator lib).
-        GODOT_CPP_LIB="$GCPP_BIN/libgodot-cpp.ios.${TARGET}.${ARCH}.a"
-    fi
-    if [ -z "$GODOT_CPP_LIB" ] || [ ! -f "$GODOT_CPP_LIB" ]; then
-        echo "ERROR: godot-cpp .a not found in $GCPP_BIN/"
-        echo "       Expected: libgodot-cpp.ios.${TARGET}.${ARCH}[.simulator].a"
-        echo "       Available: $(ls "$GCPP_BIN/"*.a 2>/dev/null)"
-        exit 1
-    fi
-    echo "  godot-cpp: $GODOT_CPP_LIB"
-
-    # Merge extension .a + godot-cpp .a + ThorVG .a into one archive.
-    # We use ar extract+repack rather than libtool -static to avoid a macOS
-    # libtool bug where case-insensitive path resolution treats the same
-    # archive as appearing twice, triggering a false "duplicate member" error.
-    local THORVG_LIB="$THORVG_BUILDDIR/src/libthorvg-1.a"
-    if [ ! -f "$THORVG_LIB" ]; then
-        echo "ERROR: ThorVG .a not found: $THORVG_LIB"
-        echo "       Run: ./build_thorvg_ios.sh"
-        exit 1
-    fi
-
-    local _MERGE_TMP
-    _MERGE_TMP="$(mktemp -d)"
-    mkdir "$_MERGE_TMP/ext" "$_MERGE_TMP/gcpp" "$_MERGE_TMP/tvg"
-    (cd "$_MERGE_TMP/ext"  && ar -x "$PRODUCED")
-    (cd "$_MERGE_TMP/gcpp" && ar -x "$GODOT_CPP_LIB")
-    (cd "$_MERGE_TMP/tvg"  && ar -x "$THORVG_LIB")
-    # Prefix godot-cpp and ThorVG objects to prevent duplicate member names
-    for f in "$_MERGE_TMP/gcpp/"*.o; do [ -f "$f" ] && mv "$f" "${f%.o}_g.o"; done
-    for f in "$_MERGE_TMP/tvg/"*.o;  do [ -f "$f" ] && mv "$f" "${f%.o}_t.o"; done
-    find "$_MERGE_TMP" -name "*.o" | sort | xargs ar -crs "$INTERMEDIATES/$OUT_NAME"
-    ranlib "$INTERMEDIATES/$OUT_NAME"
-    rm -rf "$_MERGE_TMP"
-    rm -f "$PRODUCED"
-    echo "  -> $INTERMEDIATES/$OUT_NAME"
-}
-
-for tgt in $TARGETS; do
-    for v in $VARIANTS; do
-        build_variant "$tgt" "$v"
+mkdir -p "$BIN_DIR"
+STAGE="$(mktemp -d "$BIN_DIR/.ios-build.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
+cd "$SCRIPT_DIR"
+for target in $TARGETS; do
+    device_lib=""
+    simulator_libs=()
+    for variant in $VARIANTS; do
+        case "$variant" in
+            device) arch=arm64; simulator=no; suffix=arm64 ;;
+            sim-arm64) arch=arm64; simulator=yes; suffix=arm64.simulator ;;
+            sim-x86_64) arch=x86_64; simulator=yes; suffix=x86_64.simulator ;;
+        esac
+        "${SCONS[@]}" platform=ios "target=$target" "arch=$arch" \
+            "ios_simulator=$simulator" "ios_min_version=$MIN_IOS" -j"$JOBS"
+        name="libgodot_lottie.ios.$target.$suffix.dylib"
+        produced="$BIN_DIR/$name"
+        [[ -f "$produced" ]] || { echo "Missing artifact: $produced" >&2; exit 1; }
+        cp "$produced" "$STAGE/$name"
+        if [[ "$simulator" == no ]]; then
+            device_lib="$STAGE/$name"
+        else
+            simulator_libs+=("$STAGE/$name")
+        fi
     done
+    args=()
+    if [[ -n "$device_lib" ]]; then args+=(-library "$device_lib"); fi
+    if [[ ${#simulator_libs[@]} -gt 0 ]]; then
+        sim_name="libgodot_lottie.ios.$target.simulator.dylib"
+        if [[ ${#simulator_libs[@]} -eq 1 ]]; then
+            cp "${simulator_libs[0]}" "$STAGE/$sim_name"
+        else
+            lipo -create "${simulator_libs[@]}" -output "$STAGE/$sim_name"
+        fi
+        install_name_tool -id "@rpath/$sim_name" "$STAGE/$sim_name"
+        args+=(-library "$STAGE/$sim_name")
+    fi
+    xcf="libgodot_lottie.ios.$target.xcframework"
+    xcodebuild -create-xcframework "${args[@]}" -output "$STAGE/$xcf"
+    # Partial device builds must not remove previously distributed simulator slices.
+    python3 - "$BIN_DIR/$xcf" "$STAGE/$xcf" <<'PY'
+import plistlib
+import shutil
+import sys
+from pathlib import Path
+
+previous, output = map(Path, sys.argv[1:])
+if not (previous / "Info.plist").exists():
+    sys.exit(0)
+with (previous / "Info.plist").open("rb") as f:
+    old = plistlib.load(f)
+with (output / "Info.plist").open("rb") as f:
+    new = plistlib.load(f)
+def platform(library):
+    return library["SupportedPlatform"], library.get("SupportedPlatformVariant", "")
+rebuilt = {platform(library) for library in new["AvailableLibraries"]}
+for library in old["AvailableLibraries"]:
+    if platform(library) in rebuilt:
+        continue
+    library = dict(library)
+    identifier = library["LibraryIdentifier"]
+    name = Path(library["LibraryPath"]).with_suffix(".dylib").name
+    source = previous / identifier / name
+    if not source.is_file():
+        raise RuntimeError(f"Rebuild this slice; no existing dynamic library: {source}")
+    (output / identifier).mkdir(parents=True)
+    shutil.copy2(source, output / identifier / name)
+    library["LibraryPath"] = name
+    if "BinaryPath" in library:
+        library["BinaryPath"] = name
+    new["AvailableLibraries"].append(library)
+with (output / "Info.plist").open("wb") as f:
+    plistlib.dump(new, f, sort_keys=False)
+PY
+    # Only replace the prior package after every selected slice built successfully.
+    rm -rf "$BIN_DIR/$xcf"
+    mv "$STAGE/$xcf" "$BIN_DIR/$xcf"
+    echo "Built: $BIN_DIR/$xcf"
 done
-
-# ---- Lipo simulator .a files (arm64 + x86_64) ----------------------------
-
-combine_simulator_libs() {
-    local TARGET="$1"
-    local ARM_LIB="$INTERMEDIATES/libgodot_lottie.ios.$TARGET.arm64.simulator.a"
-    local X86_LIB="$INTERMEDIATES/libgodot_lottie.ios.$TARGET.x86_64.simulator.a"
-    local OUT="$INTERMEDIATES/libgodot_lottie.ios.$TARGET.simulator.a"
-
-    if [ -f "$ARM_LIB" ] && [ -f "$X86_LIB" ]; then
-        echo
-        echo "=== lipo simulator .a files for $TARGET ==="
-        lipo -create "$ARM_LIB" "$X86_LIB" -output "$OUT"
-    elif [ -f "$ARM_LIB" ]; then
-        cp "$ARM_LIB" "$OUT"
-    elif [ -f "$X86_LIB" ]; then
-        cp "$X86_LIB" "$OUT"
-    fi
-    [ -f "$OUT" ] && echo "  -> $OUT"
-}
-
-# ---- Build xcframeworks from static .a files -----------------------------
-
-build_xcframework() {
-    local TARGET="$1"
-    local DEVICE_A="$INTERMEDIATES/libgodot_lottie.ios.$TARGET.arm64.a"
-    local SIM_A="$INTERMEDIATES/libgodot_lottie.ios.$TARGET.simulator.a"
-    local XCF="$BIN_DIR/libgodot_lottie.ios.$TARGET.xcframework"
-
-    local ARGS=()
-    if [ -f "$DEVICE_A" ]; then
-        ARGS+=(-library "$DEVICE_A")
-    fi
-    if [ -f "$SIM_A" ]; then
-        ARGS+=(-library "$SIM_A")
-    fi
-    if [ ${#ARGS[@]} -eq 0 ]; then
-        echo "WARN: no .a files for $TARGET, skipping xcframework"
-        return
-    fi
-
-    echo
-    echo "=== xcodebuild -create-xcframework ($TARGET, static) ==="
-    rm -rf "$XCF"
-    xcodebuild -create-xcframework "${ARGS[@]}" -output "$XCF"
-    echo "  -> $XCF"
-}
-
-for tgt in $TARGETS; do
-    combine_simulator_libs "$tgt"
-    build_xcframework "$tgt"
-done
-
-echo
-echo "=== iOS extension build complete ==="
-for tgt in $TARGETS; do
-    XCF="$BIN_DIR/libgodot_lottie.ios.$tgt.xcframework"
-    if [ -d "$XCF" ]; then
-        echo "  $tgt: $XCF"
-    fi
-done
-echo
-echo "Test by exporting the demo project (or any project using the addon)"
-echo "to iOS from Godot. The .xcframework will be linked into the generated"
-echo "Xcode project automatically."

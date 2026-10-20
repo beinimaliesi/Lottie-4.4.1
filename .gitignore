@@ -10,6 +10,8 @@ demo/.godot/
 *.pdb
 *.TMP
 demo/addons/godot_lottie/bin/~*.TMP
+demo/addons/godot_lottie/bin/.ios-build.*/
+demo/addons/godot_lottie/bin/libgodot_lottie.ios.*.dylib
 
 # Build artifacts gerais
 .sconsign.dblite

@@ -9,8 +9,7 @@
 # Required: Xcode + Command Line Tools installed.
 #
 # Optional env knobs:
-#   MIN_IOS  -- minimum iOS version target (default 12.0; matches godot-cpp's
-#               ios_min_version default)
+#   MIN_IOS  -- minimum iOS version target (default 15.0)
 #   VARIANTS -- space-separated subset of {device sim-arm64 sim-x86_64}
 #               (default builds all three)
 #
@@ -32,7 +31,7 @@ if ! xcrun --version >/dev/null 2>&1; then
     exit 1
 fi
 
-MIN_IOS="${MIN_IOS:-12.0}"
+MIN_IOS="${MIN_IOS:-15.0}"
 VARIANTS="${VARIANTS:-device sim-arm64 sim-x86_64}"
 
 # ---- Resolve toolchain via xcrun ------------------------------------------
@@ -113,8 +112,8 @@ strip = '$IOS_STRIP'
 pkg-config = 'false'
 
 [built-in options]
-c_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS', '-fembed-bitcode']
-cpp_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS', '-stdlib=libc++', '-fembed-bitcode']
+c_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS']
+cpp_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS', '-stdlib=libc++']
 c_link_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS']
 cpp_link_args = ['-arch', '$ARCH', '-isysroot', '$SDK_PATH', '$MIN_FLAG=$MIN_IOS', '-stdlib=libc++']
 
