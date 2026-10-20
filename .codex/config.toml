@@ -1,0 +1,12 @@
+
+# 项目默认审批策略：never 表示不弹审批提示
+approval_policy = "never"
+
+# 沙箱模式：danger-full-access 表示最大权限（Full Access）
+sandbox_mode = "danger-full-access"
+
+
+# ============ chrome-devtools mcp =======
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
