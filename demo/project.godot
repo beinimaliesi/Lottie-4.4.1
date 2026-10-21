@@ -22,6 +22,7 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/vsync/vsync_mode=2
+window/handheld/orientation.ios=2
 
 [editor_plugins]
 
@@ -37,6 +38,8 @@ common/physics_ticks_per_second=200
 common/enable_object_picking=false
 
 [rendering]
+
+textures/vram_compression/import_etc2_astc=true
 
 textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
