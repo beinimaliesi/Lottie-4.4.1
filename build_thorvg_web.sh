@@ -30,7 +30,7 @@ if ! command -v emcc >/dev/null 2>&1; then
     echo "  source /path/to/emsdk/emsdk_env.sh"
     exit 1
 fi
-echo "Emscripten: $(emcc --version | head -1)"
+python3 "$SCRIPT_DIR/scripts/check_web_toolchain.py"
 
 # Resolve meson
 if command -v meson >/dev/null 2>&1; then
@@ -132,6 +132,7 @@ EOF
     echo
     echo "Building ThorVG WASM..."
     $MESON compile -C "$BUILD_DIR" -j"$(nproc 2>/dev/null || echo 4)"
+    cp "$SCRIPT_DIR/.emscripten-version" "$BUILD_DIR/.emscripten-version"
 
     echo
     echo "========================================"

@@ -158,7 +158,12 @@ python -m SCons platform=macos target=template_release
 
 Use Emscripten **4.0.20** to match the Godot 4.7.2 official Web templates
 (including their C++ standard library ABI). Activate that SDK and install
-Meson, Ninja and SCons, then run:
+Meson, Ninja and SCons.
+
+The version is pinned in `.emscripten-version`; both the ThorVG script
+and SCons reject a different SDK. When switching SDKs, clean the old Web
+objects as described in [BUILDING.md](BUILDING.md#63-build-the-extension-for-web).
+Then run:
 
 ```bash
 ./build_thorvg_web.sh

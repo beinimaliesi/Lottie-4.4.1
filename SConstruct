@@ -14,6 +14,16 @@ import shutil
 # extension loadable in 4.7.x and all later 4.x minors.
 env = SConscript("thirdparty/godot-cpp/SConstruct", {"api_version": "4.7"})
 
+# Check the resolved platform before SCons starts compiling any sources.
+if env["platform"] == "web":
+    import runpy
+
+    try:
+        web_toolchain_version = runpy.run_path("scripts/check_web_toolchain.py")["check_toolchain"]()
+    except RuntimeError as error:
+        print(error)
+        Exit(1)
+
 # Linux: enable OpenMP for ThorVG's threading support
 # ThorVG is built with -Dthreads=true which uses OpenMP for parallel rendering
 # Add here (after godot-cpp import) to avoid affecting godot-cpp's build
@@ -53,6 +63,15 @@ if env["platform"] == "web":
     if not os.path.isfile(os.path.join(thorvg_lib_dir, "libthorvg-1.a")):
         print("Error: missing ThorVG Web library for {}. Run:".format(web_variant))
         print("  WEB_VARIANTS={} ./build_thorvg_web.sh".format(web_variant))
+        Exit(1)
+    version_file = os.path.join(thorvg_lib_dir, "..", ".emscripten-version")
+    thorvg_toolchain_version = None
+    if os.path.isfile(version_file):
+        with open(version_file) as version_handle:
+            thorvg_toolchain_version = version_handle.read().strip()
+    if thorvg_toolchain_version != web_toolchain_version:
+        print("Error: ThorVG was not built with the pinned Emscripten version.")
+        print("Run: WEB_VARIANTS={} ./build_thorvg_web.sh".format(web_variant))
         Exit(1)
 elif env["platform"] == "android":
     arch = env.get("arch", "arm64")

@@ -635,8 +635,8 @@ find the right SDK at SCons-time.
 ```bash
 git clone https://github.com/emscripten-core/emsdk.git
 cd emsdk
-./emsdk install latest
-./emsdk activate latest
+./emsdk install 4.0.20
+./emsdk activate 4.0.20
 source ./emsdk_env.sh        # Linux/macOS
 # Windows: emsdk_env.bat
 ```
@@ -645,72 +645,58 @@ Verify:
 
 ```bash
 emcc --version
-# emcc (Emscripten gcc/clang-like replacement) 3.x.x
+# emcc (Emscripten gcc/clang-like replacement ...) 4.0.20
 ```
 
-Godot 4.7+ Web exports use **wasm32 + no threads** (the SharedArrayBuffer
-COOP/COEP requirement is a pain), which matches the `.gdextension` entry
-(`web.template_release.wasm32.nothreads.wasm`).
+The supported SDK version is pinned in `.emscripten-version` and shared by
+local builds and CI. Do not use `latest` or an arbitrary Homebrew version:
+a different libc++ ABI can introduce imports absent from the Godot export
+template (for example, `std::__2::__hash_memory` with Emscripten 6.0.10).
+Both `build_thorvg_web.sh` and SCons reject a mismatched SDK. After switching
+SDKs, rebuild ThorVG before rebuilding all four extension variants.
+
+The demo Web preset uses **wasm32 + no threads**. Threaded builds are also
+provided and require a server with the appropriate COOP/COEP headers.
 
 ### 6.2 Build ThorVG for WASM
 
-ThorVG ships an `emscripten` cross-file template; copy / adapt it. Sample
-`thirdparty/thorvg/cross-emscripten.ini`:
-
-```ini
-[binaries]
-c = 'emcc'
-cpp = 'em++'
-ar = 'emar'
-strip = 'emstrip'
-pkg-config = 'false'
-
-[host_machine]
-system = 'emscripten'
-cpu_family = 'wasm32'
-cpu = 'wasm32'
-endian = 'little'
-
-[built-in options]
-c_args     = ['-pthread=false']
-cpp_args   = ['-pthread=false', '-DTHORVG_THREAD_SUPPORT=0']
-c_link_args   = ['-pthread=false']
-cpp_link_args = ['-pthread=false']
-```
-
-Build:
+From the repository root, with the pinned SDK active:
 
 ```bash
-cd thirdparty/thorvg
-meson setup build_wasm \
-  --cross-file cross-emscripten.ini \
-  -Dbuildtype=release -Ddefault_library=static -Db_ndebug=true \
-  -Dsimd=false -Dthreads=false -Dpartial=true \
-  -Dengines=sw -Dloaders=lottie -Dbindings=capi -Dexamples=false
-meson compile -C build_wasm
+./build_thorvg_web.sh
 ```
 
-Note the output directory is **`build_wasm`** (not `builddir`) — that's what
-the SConstruct's Web branch expects:
-
-```python
-if env["platform"] == "web":
-    thorvg_lib_dir = os.path.join("thirdparty", "thorvg", "build_wasm", "src")
-```
+This builds PNG-enabled static libraries in
+`thirdparty/thorvg/build_wasm_nothreads/src/` and
+`thirdparty/thorvg/build_wasm_threads/src/`. It records the SDK version in
+each build directory; SCons checks it before linking. Do not reuse ThorVG
+archives or godot-cpp object files compiled with another SDK.
 
 ### 6.3 Build the extension for Web
 
+After switching SDKs, remove the old Web objects with SCons first:
+
 ```bash
-python3 -m SCons platform=web target=template_debug   -j$(nproc)
-python3 -m SCons platform=web target=template_release -j$(nproc)
+for threads in no yes; do
+  for target in template_debug template_release; do
+    scons platform=web target=$target arch=wasm32 threads=$threads --clean
+  done
+done
 ```
 
-SCons will pick up `emcc` from PATH (which `emsdk_env.sh` put there).
+Then build all four variants:
 
-Output:
+```bash
+for threads in no yes; do
+  for target in template_debug template_release; do
+    scons platform=web target=$target arch=wasm32 threads=$threads -j8
+  done
+done
+```
 
-- `demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_debug.wasm32.nothreads.wasm`
-- `demo/addons/godot_lottie/bin/web/libgodot_lottie.web.template_release.wasm32.nothreads.wasm`
+SCons uses the `emcc` selected by `emsdk_env.sh`. Output files are in
+`demo/addons/godot_lottie/bin/web/`: debug/release with and without the
+`.nothreads` suffix.
 
 ### 6.4 Testing in the browser
 
@@ -722,6 +708,11 @@ cd ~/Desktop/web_export
 python3 -m http.server 8000
 # open http://localhost:8000/index.html
 ```
+
+Reload the browser after exporting, and check both animation playback and
+the console. A successful WASM build alone does not establish compatibility
+with the installed Godot export template. Repeat with a Release export;
+threaded exports need COOP/COEP headers and a separate Thread Support preset.
 
 ---
 

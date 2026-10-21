@@ -305,10 +305,14 @@ jobs:
           pip3 install --user meson ninja scons
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Read pinned Emscripten version
+        id: emscripten
+        run: echo "version=$(cat .emscripten-version)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 4.0.20
+          version: ${{ steps.emscripten.outputs.version }}
 
       - name: Build ThorVG (WASM)
         run: |
