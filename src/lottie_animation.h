@@ -16,6 +16,7 @@
 #include <condition_variable>
 #include <atomic>
 #include "lottie_frame_cache.h"
+#include "lottie_thorvg_owner.h"
 
 namespace tvg {
     class SwCanvas;
@@ -50,8 +51,8 @@ private:
     String selected_dotlottie_animation;
     
     tvg::SwCanvas* canvas;
-    tvg::Animation* animation;
-    tvg::Picture* picture;
+    lottie::AnimationOwner animation;
+    tvg::Picture* picture; // Borrowed from animation.
     uint32_t* buffer;
     
     bool use_animation_size;
@@ -82,6 +83,12 @@ private:
     bool render_pending = false;
     Vector2i pending_r_size;
     float pending_r_frame = 0.0f;
+    bool pending_unpremultiply = false;
+    bool pending_fix_alpha_border = false;
+    std::atomic<uint64_t> animation_generation{0};
+    uint64_t pending_load_generation = 0;
+    uint64_t pending_render_generation = 0;
+    uint64_t pending_segment_generation = 0;
     uint64_t next_frame_id = 1;
     uint64_t last_consumed_id = 0;
     // Render deduplication
@@ -96,12 +103,13 @@ private:
         int w = 0;
         int h = 0;
         uint64_t id = 0;
+        uint64_t generation = 0;
         bool ready = false;
     } latest_frame;
     std::mutex frame_mutex;
 
     tvg::SwCanvas* w_canvas = nullptr;
-    tvg::Animation* w_animation = nullptr;
+    lottie::AnimationOwner w_animation;
     tvg::Picture* w_picture = nullptr;
     uint32_t* w_buffer = nullptr;
     Vector2i w_render_size = Vector2i(0,0);
@@ -134,6 +142,8 @@ private:
 
     void _initialize_thorvg();
     void _cleanup_thorvg();
+    void _unload_animation();
+    void _invalidate_worker_animation();
     bool _load_animation(const String& path);
     void _update_animation(float delta);
     void _render_frame();
@@ -158,7 +168,7 @@ private:
     void _post_load_to_worker(const String& path);
     void _post_render_to_worker(const Vector2i &size, float frame);
     void _post_segment_to_worker(float begin, float end);
-    void _worker_loop();
+    void _worker_loop(int engine);
     void _worker_free_resources();
     void _worker_apply_target_if_needed(const Vector2i &size);
     void _worker_apply_fit_transform();
@@ -176,6 +186,11 @@ protected:
     bool _set(const StringName &p_name, const Variant &p_value);
 
 public:
+#ifdef LOTTIE_LIFECYCLE_TESTS
+    static Dictionary debug_lifecycle_counts();
+    void debug_set_render_thread_enabled(bool enabled);
+    void debug_load_worker_path(const String &path);
+#endif
     LottieAnimation();
     ~LottieAnimation();
 

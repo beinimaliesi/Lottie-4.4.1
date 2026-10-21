@@ -735,6 +735,48 @@ After any platform build:
    ```
    Both should print `true`.
 
+
+### Animation lifecycle regression
+
+An instrumented native build exposes counters only for this regression:
+
+```bash
+scons platform=macos arch=universal target=template_debug lottie_lifecycle_tests=yes -j8
+godot --path demo res://tests/lifecycle_test.tscn
+```
+
+The scene checks synchronous 2D, worker-thread 2D, and 3D rendering. Each
+mode runs 100 load/switch/clear/destroy cycles, including embedded PNG,
+dotLottie, invalid input, detached nodes, and pending worker requests.
+It checks balanced Animation creation/destruction, Picture references,
+worker shutdown, and pixel results after switching or clearing. Native runs
+also exercise 32 batches of eight concurrent worker nodes. Web runs cover
+synchronous 2D and 3D; the addon worker is disabled on Web in production.
+
+ThorVG's bundled expression VM is shared and does not support concurrent
+callers. The addon serializes ThorVG load/evaluate/release operations across
+nodes and workers. Pixel conversion and texture upload remain outside this
+lock. Worker joins and Godot callbacks must not run while holding it.
+ Expected
+invalid-file messages are part of the test; the final result must be
+`LIFECYCLE_TEST PASS`. Repeat in an exported Debug app with this scene as
+its main scene to cover packed resources. Rebuild without
+`lottie_lifecycle_tests=yes` before distributing binaries.
+
+The native probe isolates ThorVG from Godot's global caches:
+
+```bash
+clang++ -std=c++17 -g -DLOTTIE_LIFECYCLE_TESTS -Isrc -Ithirdparty/thorvg/inc \
+  tests/native/animation_owner_test.cpp thirdparty/thorvg/builddir/src/libthorvg-1.a \
+  -o build/animation-owner-test
+leaks --atExit -- build/animation-owner-test "$PWD/demo/tests/fixtures/packed_bitmap.json"
+```
+
+For AddressSanitizer, build a separate ThorVG archive with
+`-Db_sanitize=address` and link the probe with `-fsanitize=address`.
+A clean probe does not imply that Godot or all shared caches have no
+retained allocations; the test specifically verifies animation ownership.
+
 ---
 
 ## 8. Packaging the addon

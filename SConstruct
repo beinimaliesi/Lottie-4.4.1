@@ -32,6 +32,12 @@ if env["platform"] == "linux":
     env.Append(LINKFLAGS=["-fopenmp"])
 
 
+# Instrument lifecycle regressions without changing godot-cpp or release APIs.
+if ARGUMENTS.get("lottie_lifecycle_tests", "no") == "yes":
+    env.Append(CPPDEFINES=["LOTTIE_LIFECYCLE_TESTS"])
+    if env["platform"] == "macos":
+        env.Replace(LINKFLAGS=[flag for flag in env["LINKFLAGS"] if flag != "-Wl,-x"])
+
 # Source files
 env.Append(CPPPATH=["src/"])
 sources = Glob("src/*.cpp")

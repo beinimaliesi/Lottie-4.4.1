@@ -8,6 +8,7 @@
 #include <godot_cpp/variant/string.hpp>
 
 #include <cstdint>
+#include "lottie_thorvg_owner.h"
 
 namespace tvg {
 class SwCanvas;
@@ -51,9 +52,9 @@ private:
     Ref<ImageTexture> lottie_texture;
     PackedByteArray pixel_bytes;
 
-    // ThorVG objects (raw pointers, owned by this node; see _cleanup_thorvg).
+    // Animation owns Picture; Canvas holds an additional Picture reference.
     tvg::SwCanvas *canvas;
-    tvg::Animation *animation;
+    lottie::AnimationOwner animation;
     tvg::Picture *picture; // Owned by `animation`; do not delete directly.
     uint32_t *buffer;
 

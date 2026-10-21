@@ -585,7 +585,36 @@ bool LottieAnimation::_set(const StringName &p_name, const Variant &p_value) {
     return false;
 }
 
+#ifdef LOTTIE_LIFECYCLE_TESTS
+Dictionary LottieAnimation::debug_lifecycle_counts() {
+    Dictionary counts;
+    counts["created"] = (int64_t)lottie::animations_created.load();
+    counts["destroyed"] = (int64_t)lottie::animations_destroyed.load();
+    counts["unexpected_picture_refs"] = (int64_t)lottie::unexpected_picture_refs.load();
+    counts["workers"] = (int64_t)lottie::active_workers.load();
+    return counts;
+}
+
+void LottieAnimation::debug_load_worker_path(const String &path) {
+    _invalidate_worker_animation();
+    _post_load_to_worker(path);
+    _post_render_to_worker(render_size, current_frame);
+}
+
+void LottieAnimation::debug_set_render_thread_enabled(bool enabled) {
+    _stop_worker();
+    render_thread_enabled = enabled;
+    _start_worker_if_needed();
+    if (!animation_path.is_empty() && is_inside_tree()) _load_animation(animation_path);
+}
+#endif
+
 void LottieAnimation::_bind_methods() {
+#ifdef LOTTIE_LIFECYCLE_TESTS
+    ClassDB::bind_static_method("LottieAnimation", D_METHOD("debug_lifecycle_counts"), &LottieAnimation::debug_lifecycle_counts);
+    ClassDB::bind_method(D_METHOD("debug_set_render_thread_enabled", "enabled"), &LottieAnimation::debug_set_render_thread_enabled);
+    ClassDB::bind_method(D_METHOD("debug_load_worker_path", "path"), &LottieAnimation::debug_load_worker_path);
+#endif
     // Methods
     ClassDB::bind_method(D_METHOD("play"), &LottieAnimation::play);
     ClassDB::bind_method(D_METHOD("stop"), &LottieAnimation::stop);
@@ -714,12 +743,11 @@ LottieAnimation::LottieAnimation() {
 }
 
 LottieAnimation::~LottieAnimation() {
-    // Decrement usage for current animation key
-    if (!animation_key.is_empty()) _registry_dec(animation_key);
     _cleanup_thorvg();
 }
 
 void LottieAnimation::_initialize_thorvg() {
+    std::unique_lock<std::recursive_mutex> engine_lock(lottie::engine_mutex());
     static bool thorvg_initialized = false;
     if (!thorvg_initialized) {
         unsigned int hw_threads = std::thread::hardware_concurrency();
@@ -752,57 +780,80 @@ void LottieAnimation::_initialize_thorvg() {
     }
     
     _allocate_buffer_and_target(render_size);
+    engine_lock.unlock();
     // Only start worker when enabled (never on Web by default)
     _start_worker_if_needed();
 }
 
 void LottieAnimation::_cleanup_thorvg() {
     _stop_worker();
-    if (picture && animation) {
-        canvas->remove();
+    lottie::EngineGuard guard(lottie::engine_mutex());
+    lottie::release_animation(canvas, animation, picture);
+    if (!animation_key.is_empty()) {
+        _registry_dec(animation_key);
+        animation_key = String();
     }
-    
-    if (canvas) {
-        delete canvas;
-        canvas = nullptr;
+    delete canvas;
+    canvas = nullptr;
+    delete[] buffer;
+    buffer = nullptr;
+}
+
+void LottieAnimation::_invalidate_worker_animation() {
+    {
+        std::lock_guard<std::mutex> lk(job_mutex);
+        ++animation_generation;
+        pending_path8.clear();
+        pending_load_generation = animation_generation.load();
+        load_pending = render_thread_enabled;
+        render_pending = false;
+        segment_pending = false;
     }
-    
-    if (buffer) { delete[] buffer; buffer = nullptr; }
-    
-    animation = nullptr;
-    picture = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(frame_mutex);
+        latest_frame.ready = false;
+        latest_frame.rgba.clear();
+    }
+    job_cv.notify_one();
+}
+
+void LottieAnimation::_unload_animation() {
+    _invalidate_worker_animation();
+    lottie::release_animation(canvas, animation, picture);
+    if (!animation_key.is_empty()) {
+        _registry_dec(animation_key);
+        animation_key = String();
+    }
+    live_cache_active = false;
+    pending_resize = false;
+    playing = false;
+    duration = total_frames = current_frame = 0.0f;
+    first_frame_drawn = false;
+    last_rendered_qf = last_posted_qf = -1;
+    last_posted_size = Vector2i();
+    texture.unref();
+    texture_ring.clear();
+    image.unref();
+    pixel_bytes = PackedByteArray();
+    if (buffer) memset(buffer, 0, (size_t)render_size.x * render_size.y * sizeof(uint32_t));
+    queue_redraw();
 }
 
 bool LottieAnimation::_load_animation(const String& path) {
-    if (path.is_empty()) {
+    const bool resume_playing = playing;
+    _unload_animation();
+    std::unique_lock<std::recursive_mutex> engine_lock(lottie::engine_mutex(), std::defer_lock);
+    auto fail = [this, &engine_lock]() {
+        if (engine_lock.owns_lock()) engine_lock.unlock();
+        emit_signal("animation_loaded", false);
         return false;
-    }
-    
-    if (!canvas) {
-        UtilityFunctions::printerr("ThorVG canvas not initialized");
-        return false;
-    }
-    
-    if (picture) {
-    canvas->remove();
-        picture = nullptr;
-        animation = nullptr;
-        if (buffer) memset(buffer, 0, (size_t)render_size.x * (size_t)render_size.y * sizeof(uint32_t));
-        if (image.is_valid()) {
-            pixel_bytes.fill(0);
-            image->set_data(render_size.x, render_size.y, false, Image::FORMAT_RGBA8, pixel_bytes);
-            if (texture.is_valid()) texture->update(image);
-        }
-    }
-    
-    animation = tvg::Animation::gen();
-    picture = animation->picture();
-    
-    if (!picture) {
-        UtilityFunctions::printerr("Failed to create ThorVG picture");
-        return false;
-    }
-    
+    };
+    if (path.is_empty() || !canvas) return fail();
+
+    auto candidate = lottie::make_animation();
+    auto *candidate_picture = candidate ? candidate->picture() : nullptr;
+    if (!candidate_picture) return fail();
+
     // Load the Lottie file (.json/.lot) or handle .lottie (zip) by extracting the JSON
     String source_path = path;
     String lower = path.to_lower();
@@ -819,8 +870,7 @@ bool LottieAnimation::_load_animation(const String& path) {
         // If a specific animation was selected from manifest, prefer extracting that entry
         String extracted = _extract_lottie_json_to_cache(path, preferred_inner);
         if (extracted.is_empty()) {
-            emit_signal("animation_loaded", false);
-            return false;
+            return fail();
         }
         source_path = extracted;
     }
@@ -828,7 +878,8 @@ bool LottieAnimation::_load_animation(const String& path) {
     // Try direct load; if it fails (e.g., file is inside the PCK on Web), mirror to user:// and retry.
     auto _try_load_path = [&](const String &p) -> bool {
         String ap = ProjectSettings::get_singleton()->globalize_path(p);
-        return picture->load(ap.utf8().get_data()) == tvg::Result::Success;
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        return candidate_picture->load(ap.utf8().get_data()) == tvg::Result::Success;
     };
 
     String loaded_path = source_path;
@@ -842,39 +893,35 @@ bool LottieAnimation::_load_animation(const String& path) {
     }
     if (!loaded_ok) {
         UtilityFunctions::printerr("Failed to load Lottie animation: " + source_path);
-        return false;
+        return fail();
     }
-    // Decrement usage for old key if different
-    if (!animation_key.is_empty() && animation_key != source_path) {
-        _registry_dec(animation_key);
-    }
-    animation_key = source_path; // cache key base
-    _registry_inc(animation_key);
-    _recompute_live_cache_state();
-    
-    // Get animation info
-    duration = animation->duration();
-    total_frames = animation->totalFrame();
-    current_frame = 0.0f;
-    
+    engine_lock.lock();
     // Query intrinsic size and set sizing policy
     float pw = 0.0f, ph = 0.0f;
-    picture->size(&pw, &ph);
+    candidate_picture->size(&pw, &ph);
     if (pw <= 0 || ph <= 0) {
         pw = (float)render_size.x; ph = (float)render_size.y;
     }
     base_picture_size = Vector2i((int)std::ceil(pw), (int)std::ceil(ph));
 
     _apply_sizing_policy();
-    _apply_picture_transform_to_fit();
 
     // Add to canvas once; keep persistent for incremental updates
-    if (canvas->add(picture) != tvg::Result::Success) {
+    if (canvas->add(candidate_picture) != tvg::Result::Success) {
         UtilityFunctions::printerr("Failed to add picture to canvas");
-        return false;
+        return fail();
     }
-    
-    _create_texture();
+    animation = std::move(candidate);
+    picture = animation->picture();
+    duration = animation->duration();
+    total_frames = animation->totalFrame();
+    current_frame = 0.0f;
+    playing = resume_playing;
+    animation_key = source_path;
+    _registry_inc(animation_key);
+    _recompute_live_cache_state();
+    _apply_picture_transform_to_fit();
+    engine_lock.unlock();
     if (render_thread_enabled) {
         // The native worker cannot read res:// files inside an exported PCK.
         _post_load_to_worker(loaded_path);
@@ -971,11 +1018,13 @@ void LottieAnimation::_render_frame() {
     }
 
     // Set animation frame
-    animation->frame(current_frame);
-
-    canvas->update();
-    canvas->draw(false);
-    canvas->sync();
+    {
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        animation->frame(current_frame);
+        canvas->update();
+        canvas->draw(false);
+        canvas->sync();
+    }
     
     // Copy buffer to image (reuse persistent pixel_bytes to avoid allocations)
     if (image.is_valid()) {
@@ -1046,6 +1095,7 @@ void LottieAnimation::_ready() {
 
 void LottieAnimation::_process(double delta) {
     _uploaded_this_frame = false; // reset per-frame flag for redraw gating
+    if (!animation) return;
     // Coalesce pending resizes safely here, once per frame
     _elapsed_time += delta;
     if (dynamic_resolution) {
@@ -1061,7 +1111,10 @@ void LottieAnimation::_process(double delta) {
             pending_resize = false;
             _allocate_buffer_and_target(pending_target_size);
             _apply_picture_transform_to_fit();
-            canvas->update();
+            {
+                lottie::EngineGuard guard(lottie::engine_mutex());
+                canvas->update();
+            }
             applied_resize = true;
         }
     }
@@ -1084,7 +1137,8 @@ void LottieAnimation::_process(double delta) {
             {
                 std::lock_guard<std::mutex> lk(frame_mutex);
                 if (latest_frame.ready && latest_frame.id > last_consumed_id) {
-                    if (latest_frame.w == render_size.x && latest_frame.h == render_size.y) {
+                    if (latest_frame.generation == animation_generation.load() &&
+                            latest_frame.w == render_size.x && latest_frame.h == render_size.y) {
                         // Ensure image/texture prepared for this size
                         if (!image.is_valid() || image->get_width() != render_size.x || image->get_height() != render_size.y) {
                             _create_texture();
@@ -1168,7 +1222,10 @@ void LottieAnimation::_allocate_buffer_and_target(const Vector2i &size) {
     render_size = Vector2i(std::min(size.x, max_render_size.x), std::min(size.y, max_render_size.y));
     buffer = new uint32_t[(size_t)render_size.x * (size_t)render_size.y];
     memset(buffer, 0, (size_t)render_size.x * (size_t)render_size.y * sizeof(uint32_t));
-    canvas->target(buffer, render_size.x, render_size.x, render_size.y, tvg::ColorSpace::ARGB8888S);
+    {
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        canvas->target(buffer, render_size.x, render_size.x, render_size.y, tvg::ColorSpace::ARGB8888S);
+    }
     pixel_bytes.resize((int64_t)render_size.x * (int64_t)render_size.y * 4);
     _create_texture();
 
@@ -1207,6 +1264,7 @@ void LottieAnimation::_apply_picture_transform_to_fit() {
     m.e11 = s;   m.e12 = 0.0f; m.e13 = (render_size.x - pw * s) * 0.5f; // tx
     m.e21 = 0.0f; m.e22 = s;   m.e23 = (render_size.y - ph * s) * 0.5f; // ty
     m.e31 = 0.0f; m.e32 = 0.0f; m.e33 = 1.0f;
+    lottie::EngineGuard guard(lottie::engine_mutex());
     picture->transform(m);
 }
 
@@ -1263,7 +1321,10 @@ void LottieAnimation::_apply_selected_state_segment() {
     float sb = 0.0f, se = 0.0f;
     String json_path = animation_key;
     if (_find_marker_range(json_path, marker, sb, se)) {
-        if (animation) animation->segment(sb, se);
+        if (animation) {
+            lottie::EngineGuard guard(lottie::engine_mutex());
+            animation->segment(sb, se);
+        }
         _post_segment_to_worker(sb, se);
     }
 }
@@ -1431,50 +1492,23 @@ float LottieAnimation::get_frame() const {
 }
 
 void LottieAnimation::set_animation_path(const String& path) {
-    if (animation_path != path) {
-        animation_path = path;
-        if (is_inside_tree()) {
-            if (!path.is_empty()) {
-                _load_animation(path);
-                // If not a .lottie, clear manifest/state UI
-                if (!animation_path.to_lower().ends_with(".lottie")) {
-                    sm_animation_ids.clear();
-                    sm_machine_names.clear();
-                    sm_states_by_machine.clear();
-                    sm_anim_inner_paths.clear();
-                    sm_state_segments_by_machine.clear();
-                    active_animation_id = String();
-                    active_state_machine = String();
-                    active_state = String();
-                    notify_property_list_changed();
-                }
-            } else {
-                // Clear current animation and visuals when path is removed
-                playing = false;
-                if (canvas) {
-                    canvas->remove();
-                }
-                picture = nullptr;
-                animation = nullptr;
-                // Clear any pending/last worker frame so it won't upload after clearing
-                {
-                    std::lock_guard<std::mutex> lk(frame_mutex);
-                    latest_frame.ready = false;
-                    latest_frame.rgba.clear();
-                    last_consumed_id = next_frame_id; // advance cursor
-                }
-                if (buffer) memset(buffer, 0, (size_t)render_size.x * (size_t)render_size.y * sizeof(uint32_t));
-                if (image.is_valid()) {
-                    pixel_bytes.fill(0);
-                    image->set_data(render_size.x, render_size.y, false, Image::FORMAT_RGBA8, pixel_bytes);
-                }
-                // Drop current texture reference so _draw no longer draws anything
-                texture.unref();
-                if (render_thread_enabled) {
-                    _post_load_to_worker(String()); // instruct worker to clear
-                }
-                queue_redraw();
-            }
+    if (animation_path == path) return;
+    animation_path = path;
+    if (path.is_empty()) {
+        _unload_animation();
+    } else if (is_inside_tree()) {
+        _load_animation(path);
+        // If not a .lottie, clear manifest/state UI.
+        if (!path.to_lower().ends_with(".lottie")) {
+            sm_animation_ids.clear();
+            sm_machine_names.clear();
+            sm_states_by_machine.clear();
+            sm_anim_inner_paths.clear();
+            sm_state_segments_by_machine.clear();
+            active_animation_id = String();
+            active_state_machine = String();
+            active_state = String();
+            notify_property_list_changed();
         }
     }
 }
@@ -1562,7 +1596,16 @@ void LottieAnimation::_start_worker_if_needed() {
     worker_stop = false;
     load_pending = false;
     render_pending = false;
-    render_thread = std::thread([this]() { _worker_loop(); });
+    segment_pending = false;
+    render_thread = std::thread([this, engine = engine_option]() {
+#ifdef LOTTIE_LIFECYCLE_TESTS
+        ++lottie::active_workers;
+#endif
+        _worker_loop(engine);
+#ifdef LOTTIE_LIFECYCLE_TESTS
+        --lottie::active_workers;
+#endif
+    });
 }
 
 void LottieAnimation::_stop_worker() {
@@ -1660,6 +1703,7 @@ void LottieAnimation::_post_load_to_worker(const String& path) {
         String absolute_path = ProjectSettings::get_singleton()->globalize_path(path);
         pending_path8 = absolute_path.utf8().get_data();
     }
+    pending_load_generation = animation_generation.load();
     load_pending = true;
     job_cv.notify_one();
 }
@@ -1669,6 +1713,9 @@ void LottieAnimation::_post_render_to_worker(const Vector2i &size, float frame) 
     std::lock_guard<std::mutex> lk(job_mutex);
     pending_r_size = size;
     pending_r_frame = frame;
+    pending_unpremultiply = unpremultiply_alpha;
+    pending_fix_alpha_border = fix_alpha_border;
+    pending_render_generation = animation_generation.load();
     render_pending = true; // last render wins
     job_cv.notify_one();
 }
@@ -1678,19 +1725,19 @@ void LottieAnimation::_post_segment_to_worker(float begin, float end) {
     std::lock_guard<std::mutex> lk(job_mutex);
     pending_segment_begin = begin;
     pending_segment_end = end;
+    pending_segment_generation = animation_generation.load();
     segment_pending = true;
     job_cv.notify_one();
 }
 
 void LottieAnimation::_worker_free_resources() {
-    if (w_picture && w_canvas) {
-        w_canvas->remove();
-    }
-    if (w_canvas) { delete w_canvas; w_canvas = nullptr; }
-    if (w_buffer) { delete[] w_buffer; w_buffer = nullptr; }
-    w_animation = nullptr;
-    w_picture = nullptr;
-    w_render_size = Vector2i(0,0);
+    lottie::EngineGuard guard(lottie::engine_mutex());
+    lottie::release_animation(w_canvas, w_animation, w_picture);
+    delete w_canvas;
+    w_canvas = nullptr;
+    delete[] w_buffer;
+    w_buffer = nullptr;
+    w_render_size = Vector2i();
 }
 
 void LottieAnimation::_worker_apply_target_if_needed(const Vector2i &size) {
@@ -1717,110 +1764,90 @@ void LottieAnimation::_worker_apply_fit_transform() {
     w_picture->transform(m);
 }
 
-void LottieAnimation::_worker_loop() {
-    tvg::EngineOption worker_opt = tvg::EngineOption::Default;
-    if (engine_option == 1) worker_opt = tvg::EngineOption::SmartRender;
-    
-    w_canvas = tvg::SwCanvas::gen(worker_opt);
+void LottieAnimation::_worker_loop(int engine) {
+    {
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        w_canvas = tvg::SwCanvas::gen(engine == 1 ? tvg::EngineOption::SmartRender : tvg::EngineOption::Default);
+    }
     if (!w_canvas) {
         UtilityFunctions::printerr("Worker: Failed to create ThorVG canvas");
         return;
     }
-    
+    uint64_t loaded_generation = 0;
+
     while (true) {
+        bool do_load, do_render, do_segment, unpremultiply, fix_border;
+        std::string path;
+        Vector2i size;
+        float frame, segment_begin, segment_end;
+        uint64_t load_generation, render_generation, segment_generation;
         {
             std::unique_lock<std::mutex> lk(job_mutex);
-            job_cv.wait(lk, [this]{ return worker_stop || load_pending || render_pending; });
+            job_cv.wait(lk, [this] { return worker_stop || load_pending || render_pending || segment_pending; });
             if (worker_stop) break;
+            // Consume a consistent snapshot: a new load must never accidentally
+            // use a render/segment request belonging to the previous animation.
+            do_load = load_pending;
+            do_render = render_pending;
+            do_segment = segment_pending;
+            path = pending_path8;
+            size = pending_r_size;
+            frame = pending_r_frame;
+            segment_begin = pending_segment_begin;
+            segment_end = pending_segment_end;
+            unpremultiply = pending_unpremultiply;
+            fix_border = pending_fix_alpha_border;
+            load_generation = pending_load_generation;
+            render_generation = pending_render_generation;
+            segment_generation = pending_segment_generation;
+            load_pending = render_pending = segment_pending = false;
         }
-        // 1) Handle LOAD first if pending
-        bool do_load = false;
-        std::string path8_local;
-    bool do_segment = false;
-    float seg_begin_local = 0.0f;
-    float seg_end_local = 0.0f;
-        {
-            std::lock_guard<std::mutex> lk(job_mutex);
-            if (load_pending) {
-                path8_local = pending_path8;
-                load_pending = false;
-                do_load = true;
-            }
-            if (segment_pending) {
-                seg_begin_local = pending_segment_begin;
-                seg_end_local = pending_segment_end;
-                segment_pending = false;
-                do_segment = true;
-            }
-        }
+        std::unique_lock<std::recursive_mutex> engine_lock(lottie::engine_mutex());
         if (do_load) {
-            // (Re)load animation in worker thread
-            // Clean previous
-            if (w_picture) w_canvas->remove();
-            if (path8_local.empty()) {
-                // Clear resources request
-                w_animation = nullptr;
-                w_picture = nullptr;
-            } else {
-                w_animation = tvg::Animation::gen();
-                w_picture = w_animation->picture();
-                if (w_picture && w_picture->load(path8_local.c_str()) == tvg::Result::Success) {
+            lottie::release_animation(w_canvas, w_animation, w_picture);
+            loaded_generation = load_generation;
+            if (!w_canvas) break;
+            if (!path.empty() && load_generation == animation_generation.load()) {
+                auto candidate = lottie::make_animation();
+                auto *candidate_picture = candidate ? candidate->picture() : nullptr;
+                if (candidate_picture && candidate_picture->load(path.c_str()) == tvg::Result::Success &&
+                        load_generation == animation_generation.load() &&
+                        w_canvas->add(candidate_picture) == tvg::Result::Success) {
+                    w_animation = std::move(candidate);
+                    w_picture = w_animation->picture();
                     float pw = 0.0f, ph = 0.0f;
                     w_picture->size(&pw, &ph);
-                    if (pw <= 0 || ph <= 0) { pw = (float)render_size.x; ph = (float)render_size.y; }
-                    w_base_picture_size = Vector2i((int)std::ceil(pw), (int)std::ceil(ph));
-                    if (w_canvas->add(w_picture) == tvg::Result::Success) {
-                        // ok
-                    } else {
-                        w_animation = nullptr;
-                        w_picture = nullptr;
-                    }
-                } else {
-                    w_animation = nullptr;
-                    w_picture = nullptr;
+                    w_base_picture_size = Vector2i((int)std::ceil(std::max(1.0f, pw)), (int)std::ceil(std::max(1.0f, ph)));
                 }
             }
         }
-        if (do_segment && w_animation) {
-            w_animation->segment(seg_begin_local, seg_end_local);
+        if (do_segment && w_animation && segment_generation == loaded_generation &&
+                segment_generation == animation_generation.load()) {
+            w_animation->segment(segment_begin, segment_end);
         }
-        // 2) Handle RENDER (latest)
-        Vector2i rsize_local;
-        float rframe_local = 0.0f;
+        if (!do_render || size.x <= 0 || size.y <= 0 || !w_animation ||
+                render_generation != loaded_generation || render_generation != animation_generation.load()) continue;
+
+        _worker_apply_target_if_needed(size);
+        _worker_apply_fit_transform();
+        w_animation->frame(frame);
+        w_canvas->update();
+        w_canvas->draw(false);
+        w_canvas->sync();
+        engine_lock.unlock();
+        std::vector<uint8_t> pixels((size_t)w_render_size.x * w_render_size.y * 4);
+        _convert_argb_to_rgba_optimized(w_buffer, pixels.data(), (size_t)w_render_size.x * w_render_size.y);
+        if (unpremultiply) _unpremultiply_alpha_rgba(pixels.data(), w_render_size.x, w_render_size.y);
+        if (fix_border) _fix_alpha_border_rgba(pixels.data(), w_render_size.x, w_render_size.y);
         {
-            std::lock_guard<std::mutex> lk(job_mutex);
-            if (render_pending) {
-                rsize_local = pending_r_size;
-                rframe_local = pending_r_frame;
-                render_pending = false;
-            }
-        }
-        if (rsize_local.x > 0 && rsize_local.y > 0) {
-            if (!w_canvas || !w_animation || !w_picture) continue;
-            _worker_apply_target_if_needed(rsize_local);
-            _worker_apply_fit_transform();
-            w_animation->frame(rframe_local);
-            w_canvas->update();
-            w_canvas->draw(false);
-            w_canvas->sync();
-            std::vector<uint8_t> tmp;
-            tmp.resize((size_t)w_render_size.x * (size_t)w_render_size.y * 4);
-            // Optimized ARGB->RGBA conversion for worker-produced buffer.
-            _convert_argb_to_rgba_optimized(w_buffer, tmp.data(), (size_t)w_render_size.x * (size_t)w_render_size.y);
-            if (unpremultiply_alpha) {
-                _unpremultiply_alpha_rgba(tmp.data(), w_render_size.x, w_render_size.y);
-            }
-            if (fix_alpha_border) {
-                _fix_alpha_border_rgba(tmp.data(), w_render_size.x, w_render_size.y);
-            }
-            {
-                std::lock_guard<std::mutex> lk(frame_mutex);
-                latest_frame.rgba.swap(tmp);
-                latest_frame.w = w_render_size.x;
-                latest_frame.h = w_render_size.y;
-                latest_frame.id = next_frame_id++;
-                latest_frame.ready = true;
-            }
+            std::lock_guard<std::mutex> lk(frame_mutex);
+            if (render_generation != animation_generation.load()) continue;
+            latest_frame.rgba.swap(pixels);
+            latest_frame.w = w_render_size.x;
+            latest_frame.h = w_render_size.y;
+            latest_frame.id = next_frame_id++;
+            latest_frame.generation = render_generation;
+            latest_frame.ready = true;
         }
     }
 }

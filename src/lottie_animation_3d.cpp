@@ -100,6 +100,7 @@ LottieAnimation3D::~LottieAnimation3D() {
 }
 
 void LottieAnimation3D::_initialize_thorvg() {
+    std::unique_lock<std::recursive_mutex> engine_lock(lottie::engine_mutex());
     // ThorVG's task scheduler is process-wide; init it once. ThorVG ref-counts
     // Initializer::init(), so it is safe even if the 2D node initialised it too.
     static bool thorvg_initialized = false;
@@ -126,20 +127,12 @@ void LottieAnimation3D::_initialize_thorvg() {
 }
 
 void LottieAnimation3D::_cleanup_thorvg() {
-    if (picture && animation && canvas) {
-        canvas->remove();
-    }
-    if (canvas) {
-        delete canvas;
-        canvas = nullptr;
-    }
-    if (buffer) {
-        delete[] buffer;
-        buffer = nullptr;
-    }
-    // `picture` is owned by `animation`; `animation` is released by ThorVG.
-    animation = nullptr;
-    picture = nullptr;
+    lottie::EngineGuard guard(lottie::engine_mutex());
+    lottie::release_animation(canvas, animation, picture);
+    delete canvas;
+    canvas = nullptr;
+    delete[] buffer;
+    buffer = nullptr;
 }
 
 void LottieAnimation3D::_allocate_buffer_and_target(const Vector2i &size) {
@@ -153,7 +146,10 @@ void LottieAnimation3D::_allocate_buffer_and_target(const Vector2i &size) {
     render_size = size;
     buffer = new uint32_t[(size_t)render_size.x * (size_t)render_size.y];
     memset(buffer, 0, (size_t)render_size.x * (size_t)render_size.y * sizeof(uint32_t));
-    canvas->target(buffer, render_size.x, render_size.x, render_size.y, tvg::ColorSpace::ARGB8888S);
+    {
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        canvas->target(buffer, render_size.x, render_size.x, render_size.y, tvg::ColorSpace::ARGB8888S);
+    }
     pixel_bytes.resize((int64_t)render_size.x * (int64_t)render_size.y * 4);
     _create_texture();
 }
@@ -195,39 +191,30 @@ void LottieAnimation3D::_apply_picture_transform_to_fit() {
     m.e11 = s;    m.e12 = 0.0f; m.e13 = (render_size.x - pw * s) * 0.5f;
     m.e21 = 0.0f; m.e22 = s;    m.e23 = (render_size.y - ph * s) * 0.5f;
     m.e31 = 0.0f; m.e32 = 0.0f; m.e33 = 1.0f;
+    lottie::EngineGuard guard(lottie::engine_mutex());
     picture->transform(m);
 }
 
 bool LottieAnimation3D::_load_animation(const String &path) {
-    if (path.is_empty() || !canvas) {
-        return false;
-    }
-
-    // Drop any previously loaded animation.
-    if (picture) {
-        canvas->remove();
-        picture = nullptr;
-        animation = nullptr;
-    }
-
-    animation = tvg::Animation::gen();
-    picture = animation ? animation->picture() : nullptr;
-    if (!picture) {
-        UtilityFunctions::printerr("LottieAnimation3D: Failed to create ThorVG picture");
-        animation = nullptr;
+    const bool resume_playing = playing;
+    _unload_animation();
+    std::unique_lock<std::recursive_mutex> engine_lock(lottie::engine_mutex(), std::defer_lock);
+    auto fail = [this, &engine_lock]() {
+        if (engine_lock.owns_lock()) engine_lock.unlock();
         emit_signal("animation_loaded", false);
         return false;
-    }
+    };
+    if (path.is_empty() || !canvas) return fail();
+    auto candidate = lottie::make_animation();
+    auto *candidate_picture = candidate ? candidate->picture() : nullptr;
+    if (!candidate_picture) return fail();
 
     // Resolve the JSON to load. `.lottie` bundles are unpacked to user://.
     String source_path = path;
     if (path.to_lower().ends_with(".lottie")) {
         String extracted = lottie::extract_lottie_json_to_cache(path, selected_dotlottie_animation);
         if (extracted.is_empty()) {
-            animation = nullptr;
-            picture = nullptr;
-            emit_signal("animation_loaded", false);
-            return false;
+            return fail();
         }
         source_path = extracted;
     }
@@ -236,7 +223,8 @@ bool LottieAnimation3D::_load_animation(const String &path) {
     // mirror it to user:// and retry against an absolute path.
     auto try_load = [&](const String &p) -> bool {
         String ap = ProjectSettings::get_singleton()->globalize_path(p);
-        return picture->load(ap.utf8().get_data()) == tvg::Result::Success;
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        return candidate_picture->load(ap.utf8().get_data()) == tvg::Result::Success;
     };
 
     bool loaded_ok = try_load(source_path);
@@ -248,34 +236,33 @@ bool LottieAnimation3D::_load_animation(const String &path) {
     }
     if (!loaded_ok) {
         UtilityFunctions::printerr("LottieAnimation3D: Failed to load Lottie animation: " + source_path);
-        animation = nullptr;
-        picture = nullptr;
-        emit_signal("animation_loaded", false);
-        return false;
+        return fail();
     }
 
-    duration = animation->duration();
-    total_frames = animation->totalFrame();
-    current_frame = 0.0f;
 
+    engine_lock.lock();
     // Query the intrinsic Lottie size for the fit transform.
     float pw = 0.0f, ph = 0.0f;
-    picture->size(&pw, &ph);
+    candidate_picture->size(&pw, &ph);
     if (pw <= 0 || ph <= 0) {
         pw = (float)render_size.x;
         ph = (float)render_size.y;
     }
     base_picture_size = Vector2i((int)std::ceil(pw), (int)std::ceil(ph));
 
-    _apply_picture_transform_to_fit();
-
-    if (canvas->add(picture) != tvg::Result::Success) {
+    if (canvas->add(candidate_picture) != tvg::Result::Success) {
         UtilityFunctions::printerr("LottieAnimation3D: Failed to add picture to canvas");
-        animation = nullptr;
-        picture = nullptr;
-        emit_signal("animation_loaded", false);
-        return false;
+        return fail();
     }
+
+    animation = std::move(candidate);
+    picture = animation->picture();
+    duration = animation->duration();
+    total_frames = animation->totalFrame();
+    current_frame = 0.0f;
+    playing = resume_playing;
+    _apply_picture_transform_to_fit();
+    engine_lock.unlock();
 
     // Draw the first frame immediately so the node is visible even when paused.
     last_rendered_frame_index = -1;
@@ -288,11 +275,7 @@ bool LottieAnimation3D::_load_animation(const String &path) {
 
 void LottieAnimation3D::_unload_animation() {
     playing = false;
-    if (picture && canvas) {
-        canvas->remove();
-    }
-    picture = nullptr;
-    animation = nullptr;
+    lottie::release_animation(canvas, animation, picture);
     duration = 0.0f;
     total_frames = 0.0f;
     current_frame = 0.0f;
@@ -345,10 +328,13 @@ void LottieAnimation3D::_render_frame() {
         return;
     }
 
-    animation->frame(current_frame);
-    canvas->update();
-    canvas->draw(false);
-    canvas->sync();
+    {
+        lottie::EngineGuard guard(lottie::engine_mutex());
+        animation->frame(current_frame);
+        canvas->update();
+        canvas->draw(false);
+        canvas->sync();
+    }
 
     if (image.is_valid()) {
         const int64_t bytes_needed = (int64_t)render_size.x * (int64_t)render_size.y * 4;
@@ -438,12 +424,10 @@ void LottieAnimation3D::set_animation_path(const String &path) {
         return;
     }
     animation_path = path;
-    if (is_inside_tree()) {
-        if (path.is_empty()) {
-            _unload_animation();
-        } else if (_load_animation(path) && autoplay) {
-            play();
-        }
+    if (path.is_empty()) {
+        _unload_animation();
+    } else if (is_inside_tree() && _load_animation(path) && autoplay) {
+        play();
     }
 }
 
